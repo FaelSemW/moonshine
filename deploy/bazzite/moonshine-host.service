@@ -1,0 +1,26 @@
+[Unit]
+Description=Moonshine Cloud Gaming — serviço de controle (HOST)
+After=network-online.target graphical-session.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# O serviço roda na sessão do usuário (user unit) para acessar a sessão gráfica
+# quando necessário e para operar sem privilégios de root no dia a dia.
+ExecStart=/usr/bin/node %h/moonshine/host/src/index.js
+WorkingDirectory=%h/moonshine
+Restart=on-failure
+RestartSec=5
+# Diretório de dados isolado sob a home.
+Environment=MOONSHINE_DATA_DIR=%h/.local/share/moonshine
+Environment=MOONSHINE_SESSION_RUNTIME=/var/tmp/moonshine-sessions
+
+# endurecimento mínimo — o serviço não precisa de acesso amplo.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+ReadWritePaths=/var/tmp/moonshine-sessions %h/.local/share/moonshine
+
+[Install]
+WantedBy=default.target

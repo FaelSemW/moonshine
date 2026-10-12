@@ -1,0 +1,16 @@
+{
+  "name": "moonshine-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Plataforma de cloud gaming prpria sobre Sunshine (host) e Moonlight (cliente).",
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node host/src/index.js",
+    "check": "node --check host/src/index.js && node --check host/src/server.js && node --check host/src/auth.js && node --check host/src/db.js && node --check host/src/session.js && node --check host/src/sunshine.js && node --check host/src/isolation.js && node --check host/src/probe.js && node --check host/src/config.js",
+    "test": "node --test tests/test-*.js"
+  }
+}

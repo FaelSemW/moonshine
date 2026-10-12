@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b8cff"/>
+      <stop offset="1" stop-color="#7c5bff"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#g)"/>
+  <!-- lua crescente -->
+  <path d="M40 16a16 16 0 1 0 0 32 13 13 0 1 1 0-32z" fill="#0b0f1a" opacity="0.85"/>
+  <!-- estrela -->
+  <path d="M44 22l1.6 3.6L49 27l-3.4 1.4L44 32l-1.6-3.6L39 27l3.4-1.4z" fill="#fff"/>
+</svg>

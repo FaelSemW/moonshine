@@ -1,0 +1,494 @@
+// Cliente web Moonshine (também usado como PWA no Android e desktop).
+//
+// O plano de controle (autenticação, estado, reserva, encerramento) é 100% da
+// nossa plataforma. O VÍDEO/ÁUDIO/ENTRADA real é transmitido pelo Moonlight
+// (projeto oficial), que conecta direto no Sunshine do HOST. Este app NÃO
+// simula streaming: ele reserva a máquina e então orienta/abre o Moonlight com
+// o endereço correto. Em Android, usa o deep-link do Moonlight (moonlight://).
+// Em desktop, fornece o endereço para o Moonlight-Qt pareado.
+
+const api = {
+  token: localStorage.getItem('ms_token') || null,
+  user: JSON.parse(localStorage.getItem('ms_user') || 'null'),
+};
+
+const el = (id) => document.getElementById(id);
+const view = el('view');
+
+let pollTimer = null;
+let currentSession = null;
+let phase = 'idle'; // idle | connecting | preparing | streaming | ending
+
+// ---- util -------------------------------------------------------------------
+function toast(msg, kind = '') {
+  const t = el('toast');
+  t.textContent = msg;
+  t.className = `toast ${kind}`;
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.add('hidden'), 3600);
+}
+
+async function call(path, { method = 'GET', body } = {}) {
+  const res = await fetch(path, {
+    method,
+    headers: {
+      'content-type': 'application/json',
+      ...(api.token ? { authorization: `Bearer ${api.token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = {};
+  try { data = await res.json(); } catch { /* vazio */ }
+  if (res.status === 401 && path !== '/api/login') {
+    logoutLocal();
+    throw new Error('Sessão expirada. Entre novamente.');
+  }
+  if (!res.ok) throw new Error(data.error || `Erro ${res.status}`);
+  return data;
+}
+
+function setBadge(state, label) {
+  const b = el('machineBadge');
+  const map = {
+    available: 'badge-available',
+    'in-use': 'badge-active',
+    preparing: 'badge-busy',
+    cleaning: 'badge-busy',
+    unavailable: 'badge-idle',
+    locked: 'badge-locked',
+    error: 'badge-error',
+  };
+  b.className = `badge ${map[state] || 'badge-idle'}`;
+  b.textContent = label || state;
+}
+
+function logoutLocal() {
+  api.token = null; api.user = null; currentSession = null; phase = 'idle';
+  localStorage.removeItem('ms_token'); localStorage.removeItem('ms_user');
+  stopPoll();
+}
+
+function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+// ---- telas ------------------------------------------------------------------
+
+function render(html) { view.innerHTML = html; }
+
+function screenSetup() {
+  render(`
+    <div class="card">
+      <h2>Configuração inicial</h2>
+      <p class="sub">Crie a conta administradora do seu PC de jogos. Ela gerencia jogadores, estado e registros.</p>
+      <form id="setupForm" class="stack">
+        <label for="su">Usuário administrador</label>
+        <input id="su" autocomplete="username" required minlength="3" maxlength="32" pattern="[a-zA-Z0-9._-]+" />
+        <label for="sp">Senha (mínimo 8 caracteres)</label>
+        <input id="sp" type="password" autocomplete="new-password" required minlength="8" />
+        <label for="sp2">Repita a senha</label>
+        <input id="sp2" type="password" autocomplete="new-password" required minlength="8" />
+        <button class="btn" style="margin-top:18px">Criar administrador</button>
+      </form>
+    </div>`);
+  el('setupForm').onsubmit = async (e) => {
+    e.preventDefault();
+    if (el('sp').value !== el('sp2').value) return toast('As senhas não coincidem.', 'error');
+    try {
+      await call('/api/setup', { method: 'POST', body: { username: el('su').value.trim(), password: el('sp').value, role: 'admin' } });
+      toast('Administrador criado. Entre para continuar.', 'ok');
+      screenLogin();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+}
+
+function screenLogin() {
+  render(`
+    <div class="card">
+      <h2>Entrar</h2>
+      <p class="sub">Use sua conta da plataforma. <strong>Sua senha da Steam não é usada aqui.</strong></p>
+      <form id="loginForm" class="stack">
+        <label for="lu">Usuário</label>
+        <input id="lu" autocomplete="username" required />
+        <label for="lp">Senha</label>
+        <input id="lp" type="password" autocomplete="current-password" required />
+        <button class="btn" style="margin-top:18px">Entrar</button>
+      </form>
+    </div>`);
+  el('loginForm').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await call('/api/login', { method: 'POST', body: { username: el('lu').value.trim(), password: el('lp').value } });
+      api.token = r.token; api.user = r.user;
+      localStorage.setItem('ms_token', r.token);
+      localStorage.setItem('ms_user', JSON.stringify(r.user));
+      toast(`Bem-vindo, ${r.user.username}.`, 'ok');
+      if (r.user.role === 'admin') screenAdmin(); else screenClient();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+}
+
+// ---- tela do jogador --------------------------------------------------------
+
+const STATE_COPY = {
+  available: { glyph: '🟢', title: 'PC disponível', desc: 'Seu computador está pronto para uma sessão.' },
+  preparing: { glyph: '⏳', title: 'Preparando sessão', desc: 'Criando seu ambiente temporário isolado…' },
+  'in-use': { glyph: '🎮', title: 'Sessão ativa', desc: 'Streaming em andamento. Boa diversão!' },
+  cleaning: { glyph: '🧹', title: 'Encerrando', desc: 'Limpando seu ambiente temporário com segurança…' },
+  unavailable: { glyph: '🔌', title: 'Indisponível', desc: 'O servidor de streaming não respondeu.' },
+  locked: { glyph: '🔒', title: 'Bloqueado', desc: 'Uma limpeza incompleta bloqueou o PC. O administrador foi notificado.' },
+  error: { glyph: '⚠️', title: 'Erro', desc: 'Algo deu errado. Veja o painel do administrador.' },
+};
+
+async function screenClient() {
+  render(`<div class="card" id="clientCard"><div class="spinner"></div><p class="sub" style="text-align:center">Consultando estado…</p></div>`);
+  try {
+    await refreshClient();
+    startPoll();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function refreshClient() {
+  const st = await call('/api/state');
+  const s = st.machine.state;
+  setBadge(s, STATE_COPY[s]?.title || s);
+  const c = STATE_COPY[s] || STATE_COPY.unavailable;
+  const busy = ['preparing', 'in-use', 'cleaning', 'locked'].includes(s) && !currentSession;
+  render(`
+    <div class="card">
+      <div class="hero">
+        <div class="glyph">${c.glyph}</div>
+        <h1>${c.title}</h1>
+        <p>${c.desc}</p>
+      </div>
+      <div id="actions" style="margin-top:20px"></div>
+    </div>
+    <div class="card">
+      <div class="kv">
+        <span class="k">Sessão aberta</span><span class="v">${st.hasOpenSession ? 'Sim' : 'Não'}</span>
+        <span class="k">Atualizado</span><span class="v">${new Date(st.machine.updatedAt).toLocaleTimeString()}</span>
+      </div>
+    </div>`);
+  const a = el('actions');
+  a.innerHTML = '';
+  if (currentSession && ['active'].includes(currentSession.state)) {
+    a.appendChild(actionBtn('Abrir Moonlight e jogar', 'btn', launchStream));
+    a.appendChild(actionBtn('Encerrar sessão', 'btn danger', endSession));
+  } else if (s === 'available') {
+    a.appendChild(actionBtn('Iniciar sessão', 'btn', startSession));
+  } else if (busy) {
+    a.innerHTML = `<p class="sub" style="text-align:center">O PC está ocupado. Aguarde ficar livre.</p>`;
+  }
+}
+
+function actionBtn(label, cls, fn) {
+  const b = document.createElement('button');
+  b.className = cls; b.textContent = label; b.style.marginTop = '10px';
+  b.onclick = fn; return b;
+}
+
+function startPoll() {
+  stopPoll();
+  pollTimer = setInterval(async () => {
+    try {
+      const st = await call('/api/state');
+      setBadge(st.machine.state, STATE_COPY[st.machine.state]?.title || st.machine.state);
+      if (currentSession) {
+        const hb = await call('/api/session/heartbeat', { method: 'POST', body: { sessionId: currentSession.id } });
+        if (hb.state !== currentSession.state) {
+          currentSession.state = hb.state;
+          if (['closed', 'failed'].includes(hb.state)) {
+            currentSession = null; phase = 'idle';
+          }
+        }
+      }
+      // Re-renderiza se o estado geral mudou.
+      if (screenClient._last !== st.machine.state) {
+        screenClient._last = st.machine.state;
+        if (!currentSession) await refreshClient();
+      }
+    } catch { /* silencioso em polling */ }
+  }, 2000);
+}
+
+async function startSession() {
+  try {
+    setPhase('connecting', 'Conectando ao PC…');
+    const r = await call('/api/session/reserve', { method: 'POST' });
+    currentSession = { id: r.sessionId, state: r.state };
+    setPhase('preparing', 'Preparando seu ambiente isolado…');
+    const p = await call('/api/session/prepare', { method: 'POST', body: { sessionId: r.sessionId } });
+    currentSession.state = p.state;
+    currentSession.streamTarget = p.streamTarget;
+    phase = 'idle';
+    toast('Sessão pronta! Abra o Moonlight para jogar.', 'ok');
+    await refreshClient();
+    launchStream();
+  } catch (err) {
+    phase = 'idle'; currentSession = null;
+    toast(err.message, 'error');
+    await refreshClient();
+  }
+}
+
+function setPhase(p, msg) {
+  phase = p;
+  render(`<div class="card"><div class="spinner"></div><p class="sub" style="text-align:center">${msg}</p></div>`);
+}
+
+// Abre o Moonlight real. Em Android usa deep-link; em desktop mostra o endereço
+// e tenta abrir o esquema moonlight://. NÃO simula o vídeo aqui.
+function launchStream() {
+  if (!currentSession?.streamTarget) return toast('Sessão sem alvo de streaming.', 'error');
+  const host = currentSession.streamTarget.split(':')[0];
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const isMobile = /android|iphone|ipad/i.test(navigator.userAgent);
+  render(`
+    <div class="card">
+      <h2>Streaming real via Moonlight</h2>
+      <p class="sub">O vídeo, áudio e controles são transmitidos pelo <strong>Moonlight</strong> (projeto oficial), que conecta ao seu PC. O Moonshine reserva a sessão e libera o PC ao final.</p>
+      <div class="kv" style="margin:14px 0">
+        <span class="k">Host Sunshine</span><span class="v">${host}</span>
+        <span class="k">Porta GameStream</span><span class="v">47984 / 47989</span>
+      </div>
+      ${isMobile
+        ? `<a class="btn" href="moonlight://launch?host=${host}">Abrir no Moonlight</a>`
+        : `<button class="btn" id="openMl">Abrir Moonlight (moonlight://)</button>`}
+      <button class="btn secondary" id="copyHost" style="margin-top:10px">Copiar endereço do host</button>
+      <button class="btn danger" id="endMl" style="margin-top:10px">Encerrar sessão</button>
+      <p class="sub" style="margin-top:14px">Se o Moonlight não estiver pareado com este PC, pareie usando o PIN exibido no painel do administrador (Sunshine → Parear).</p>
+    </div>`);
+  const openMl = el('openMl');
+  if (openMl) openMl.onclick = () => { window.location.href = `moonlight://launch?host=${host}`; };
+  el('copyHost').onclick = async () => {
+    try { await navigator.clipboard.writeText(host); toast('Host copiado.', 'ok'); }
+    catch { toast('Copie manualmente: ' + host, 'error'); }
+  };
+  el('endMl').onclick = endSession;
+}
+
+async function endSession() {
+  if (!currentSession) return;
+  phase = 'ending';
+  setPhase('ending', 'Encerrando e limpando seu ambiente…');
+  try {
+    await call('/api/session/end', { method: 'POST', body: { sessionId: currentSession.id } });
+    currentSession = null; phase = 'idle';
+    toast('Sessão encerrada e ambiente descartado.', 'ok');
+    await refreshClient();
+  } catch (err) {
+    toast(err.message, 'error');
+    currentSession = null; phase = 'idle';
+    await refreshClient();
+  }
+}
+
+// ---- painel administrativo ---------------------------------------------------
+
+async function screenAdmin() {
+  render(`
+    <div class="wide">
+      <div class="tabs">
+        <button class="tab active" data-t="status">Estado</button>
+        <button class="tab" data-t="users">Jogadores</button>
+        <button class="tab" data-t="sunshine">Sunshine</button>
+        <button class="tab" data-t="logs">Registros</button>
+        <button class="tab" data-t="compat">Sistema</button>
+        <button class="tab ghost" data-t="out" style="margin-left:auto">Sair</button>
+      </div>
+      <div id="tabBody"><div class="spinner"></div></div>
+    </div>`);
+  const tabs = view.querySelectorAll('.tab');
+  tabs.forEach((t) => (t.onclick = () => {
+    tabs.forEach((x) => x.classList.remove('active'));
+    t.classList.add('active');
+    adminTab(t.dataset.t);
+  }));
+  adminTab('status');
+}
+
+async function adminTab(t) {
+  const body = el('tabBody');
+  body.innerHTML = '<div class="spinner"></div>';
+  try {
+    if (t === 'status') return renderAdminStatus(body);
+    if (t === 'users') return renderAdminUsers(body);
+    if (t === 'sunshine') return renderAdminSunshine(body);
+    if (t === 'logs') return renderAdminLogs(body);
+    if (t === 'compat') return renderAdminCompat(body);
+    if (t === 'out') { logoutLocal(); return screenLogin(); }
+  } catch (err) { body.innerHTML = `<div class="card"><p class="sub">${err.message}</p></div>`; }
+}
+
+async function renderAdminStatus(body) {
+  const st = await call('/api/state');
+  const sessions = await call('/api/admin/sessions');
+  const s = st.machine.state;
+  body.innerHTML = `
+    <div class="card">
+      <h2>Estado do PC</h2>
+      <div class="kv" style="margin-top:8px">
+        <span class="k">Estado</span><span class="v">${s}</span>
+        <span class="k">Detalhe</span><span class="v">${st.machine.detail || '—'}</span>
+        <span class="k">Sessão atual</span><span class="v">${st.machine.sessionId || '—'}</span>
+        <span class="k">Atualizado</span><span class="v">${new Date(st.machine.updatedAt).toLocaleString()}</span>
+      </div>
+      <div class="row" style="margin-top:16px">
+        <button class="btn secondary" id="syncSun">Sincronizar Sunshine</button>
+        ${['locked', 'error'].includes(s) ? '<button class="btn danger" id="unlock">Liberar máquina</button>' : ''}
+      </div>
+    </div>
+    <div class="card">
+      <h2>Sessões recentes</h2>
+      <table class="table"><thead><tr><th>#</th><th>Usuário</th><th>Estado</th><th>Limpeza</th><th>Criada</th></tr></thead>
+      <tbody>${sessions.sessions.slice(0, 10).map((x) => `
+        <tr><td class="num">${x.id}</td><td>${x.user_id}</td><td>${x.state}</td>
+        <td>${x.cleanup_ok === 1 ? '<span class="chip on">ok</span>' : x.cleanup_ok === 0 ? '<span class="chip off">falhou</span>' : '<span class="chip warn">—</span>'}</td>
+        <td>${new Date(x.created_at).toLocaleString()}</td></tr>`).join('') || '<tr><td colspan=5>Nenhuma sessão.</td></tr>'}</tbody></table>
+    </div>`;
+  el('syncSun').onclick = async () => {
+    const r = await call('/api/admin/sunshine/sync', { method: 'POST' });
+    toast(r.sunshine.reachable ? 'Sunshine alcançável.' : 'Sunshine inacessível.', r.sunshine.reachable ? 'ok' : 'error');
+    renderAdminStatus(body);
+  };
+  const un = el('unlock');
+  if (un) un.onclick = async () => {
+    if (!confirm('Liberar a máquina? Confirme que verificou que nenhum dado sensível restou.')) return;
+    await call('/api/admin/machine/unlock', { method: 'POST' });
+    toast('Máquina liberada.', 'ok'); renderAdminStatus(body);
+  };
+}
+
+async function renderAdminUsers(body) {
+  const r = await call('/api/admin/users');
+  body.innerHTML = `
+    <div class="card">
+      <h2>Jogadores e administradores</h2>
+      <p class="sub">Cada jogador tem uma senha da plataforma (não da Steam). Desativar revoga o acesso e as sessões.</p>
+      <table class="table"><thead><tr><th>Usuário</th><th>Papel</th><th>Ativo</th><th></th></tr></thead>
+      <tbody>${r.users.map((u) => `
+        <tr><td>${u.username}</td><td>${u.role}</td>
+        <td>${u.active ? '<span class="chip on">ativo</span>' : '<span class="chip off">inativo</span>'}</td>
+        <td style="text-align:right">
+          <button class="btn ghost" data-toggle="${u.id}" data-active="${u.active}">${u.active ? 'Desativar' : 'Ativar'}</button>
+          <button class="btn ghost" data-del="${u.id}">Excluir</button>
+        </td></tr>`).join('') || '<tr><td colspan=4>Nenhum usuário.</td></tr>'}</tbody></table>
+    </div>
+    <div class="card">
+      <h2>Adicionar jogador</h2>
+      <form id="addForm" class="stack">
+        <label>Usuário</label><input id="nu" required pattern="[a-zA-Z0-9._-]{3,32}" />
+        <label>Senha (mín. 8)</label><input id="np" type="password" required minlength="8" />
+        <label>Papel</label><select id="nr"><option value="player">Jogador</option><option value="admin">Administrador</option></select>
+        <button class="btn" style="margin-top:14px">Adicionar</button>
+      </form>
+    </div>`;
+  body.querySelectorAll('[data-toggle]').forEach((b) => (b.onclick = async () => {
+    await call(`/api/admin/users/${b.dataset.toggle}`, { method: 'PUT', body: { active: b.dataset.active !== 'true' } });
+    renderAdminUsers(body);
+  }));
+  body.querySelectorAll('[data-del]').forEach((b) => (b.onclick = async () => {
+    if (!confirm('Excluir este usuário?')) return;
+    await call(`/api/admin/users/${b.dataset.del}`, { method: 'DELETE' });
+    renderAdminUsers(body);
+  }));
+  el('addForm').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await call('/api/admin/users', { method: 'POST', body: { username: el('nu').value.trim(), password: el('np').value, role: el('nr').value } });
+      toast('Usuário criado.', 'ok'); renderAdminUsers(body);
+    } catch (err) { toast(err.message, 'error'); }
+  };
+}
+
+async function renderAdminSunshine(body) {
+  const info = await call('/api/admin/sunshine');
+  const s = info.sunshine;
+  body.innerHTML = `
+    <div class="card">
+      <h2>Sunshine (servidor de streaming)</h2>
+      <p class="sub">O Moonlight conecta diretamente no Sunshine para transmitir. O Moonshine gerencia a sessão ao redor disso.</p>
+      <div class="kv" style="margin-top:8px">
+        <span class="k">Alcançável</span><span class="v">${s.reachable ? '<span class="chip on">sim</span>' : '<span class="chip off">não</span>'}</span>
+        <span class="k">Hostname</span><span class="v">${s.hostname || '—'}</span>
+        <span class="k">Ocupado</span><span class="v">${s.busy ? 'sim' : 'não'}</span>
+        <span class="k">Jogo atual</span><span class="v">${s.currentGame || '—'}</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Credenciais da Web UI do Sunshine</h2>
+      <p class="sub">Guardadas apenas em memória do serviço para falar a API do Sunshine. Não são credenciais da Steam nem do jogador.</p>
+      <form id="credForm" class="stack">
+        <label>Usuário Sunshine</label><input id="cu" autocomplete="off" />
+        <label>Senha Sunshine</label><input id="cp" type="password" autocomplete="off" />
+        <button class="btn secondary" style="margin-top:14px">Salvar para este processo</button>
+      </form>
+    </div>`;
+  el('credForm').onsubmit = async (e) => {
+    e.preventDefault();
+    await call('/api/admin/sunshine/credentials', { method: 'POST', body: { username: el('cu').value, password: el('cp').value } });
+    toast('Credenciais do Sunshine salvas (memória).', 'ok');
+  };
+}
+
+async function renderAdminLogs(body) {
+  const [ev, at] = await Promise.all([call('/api/admin/events'), call('/api/admin/attempts')]);
+  body.innerHTML = `
+    <div class="card">
+      <h2>Registros de eventos</h2>
+      <table class="table"><thead><tr><th>Quando</th><th>Nível</th><th>Mensagem</th></tr></thead>
+      <tbody>${ev.events.slice(0, 30).map((e) => `
+        <tr><td class="num">${new Date(e.at).toLocaleTimeString()}</td>
+        <td><span class="chip ${e.level === 'error' ? 'off' : e.level === 'warn' ? 'warn' : 'on'}">${e.level}</span></td>
+        <td>${e.message}${e.ctx ? ` <span class="k">${e.ctx}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan=3>Nenhum evento.</td></tr>'}</tbody></table>
+    </div>
+    <div class="card">
+      <h2>Tentativas de login</h2>
+      <table class="table"><thead><tr><th>Usuário</th><th>IP</th><th>Resultado</th><th>Quando</th></tr></thead>
+      <tbody>${at.attempts.slice(0, 20).map((a) => `
+        <tr><td>${a.username}</td><td>${a.ip}</td>
+        <td>${a.ok ? '<span class="chip on">ok</span>' : '<span class="chip off">falhou</span>'}</td>
+        <td class="num">${new Date(a.at).toLocaleString()}</td></tr>`).join('') || '<tr><td colspan=4>Nenhuma tentativa.</td></tr>'}</tbody></table>
+    </div>`;
+}
+
+async function renderAdminCompat(body) {
+  const c = await call('/api/admin/compatibility');
+  body.innerHTML = `
+    <div class="card">
+      <h2>Diagnóstico do sistema</h2>
+      <div class="kv" style="margin-top:8px">
+        <span class="k">Plataforma</span><span class="v">${c.os.platform} ${c.os.release}</span>
+        <span class="k">Bazzite</span><span class="v">${c.os.osRelease?.isBazzite ? 'sim' : 'não'}</span>
+        <span class="k">GPU</span><span class="v">${c.gpu.gpus.join(', ') || '—'}</span>
+        <span class="k">Fornecedor</span><span class="v">${c.gpu.vendor}</span>
+        <span class="k">CPU</span><span class="v">${c.resources.cpuModel} (${c.resources.cpuCount})</span>
+        <span class="k">RAM</span><span class="v">${c.resources.memTotalGb} GB</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Compatibilidade</h2>
+      ${c.issues.map((i) => `<p class="sub" style="color:var(--red)">• ${i}</p>`).join('')}
+      ${c.notes.map((n) => `<p class="sub">• ${n}</p>`).join('')}
+      ${!c.issues.length ? '<p class="sub" style="color:var(--green)">Nenhum problema bloqueante detectado.</p>' : ''}
+    </div>`;
+}
+
+// ---- boot --------------------------------------------------------------------
+
+async function boot() {
+  el('accountBtn').onclick = async () => {
+    if (api.token) { try { await call('/api/logout', { method: 'POST' }); } catch { /* ignora */ } }
+    logoutLocal(); screenLogin();
+  };
+  try {
+    const setup = await call('/api/setup-required');
+    if (setup.required) return screenSetup();
+    if (api.token && api.user) {
+      el('accountBtn').classList.remove('hidden');
+      return api.user.role === 'admin' ? screenAdmin() : screenClient();
+    }
+    screenLogin();
+  } catch (err) {
+    render(`<div class="card"><h2>Sem conexão com o HOST</h2><p class="sub">${err.message}</p></div>`);
+  }
+}
+boot();

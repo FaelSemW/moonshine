@@ -1,0 +1,28 @@
+# Dados locais do HOST (banco, segredos, estado) — nunca versionados
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Segredos e certificados locais
+secrets/
+*.pem
+*.key
+*.crt
+
+# Artefatos de build e caches
+node_modules/
+build/
+dist/
+*.log
+*.tmp
+
+# Submódulos/third_party clonados localmente (mantidos fora do Git por tamanho;
+# os SHAs exatos e as licenças estão documentados em docs/THIRD_PARTY.md)
+third_party/
+
+# Sistema
+.DS_Store
+Thumbs.db
