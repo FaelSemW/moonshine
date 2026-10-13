@@ -27,6 +27,12 @@ export const DEFAULT_CONFIG = {
   // Em produção é o IP Tailscale do HOST na porta 47989 (HTTPS do Sunshine).
   sunshineAddress: process.env.MOONSHINE_SUNSHINE_ADDR || '127.0.0.1:47989',
 
+  // Credenciais da Web UI do Sunshine (para a config API em 47990). Guardadas
+  // neste arquivo com permissão 0600. São credenciais DO Sunshine, não do
+  // jogador. A senha da Steam nunca é coletada.
+  sunshineUsername: process.env.MOONSHINE_SUNSHINE_USER || '',
+  sunshinePassword: process.env.MOONSHINE_SUNSHINE_PASS || '',
+
   // Diretório de configuração do Sunshine para gestão.
   sunshineConfigDir:
     process.env.MOONSHINE_SUNSHINE_CONFIG || join(DATA_DIR, 'sunshine'),

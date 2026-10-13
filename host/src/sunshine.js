@@ -16,7 +16,8 @@
 // Este módulo fala a API real do Sunshine. Nada é simulado.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { loadConfig } from './config.js';
+import { loadConfig, saveConfig } from './config.js';
+import https from 'node:https';
 
 const execFileAsync = promisify(execFile);
 
@@ -26,17 +27,28 @@ export const PORT_GAMESTREAM_HTTP = 47989; // /serverinfo, /pair (sem cert)
 export const PORT_GAMESTREAM_HTTPS = 47984; // /launch, /applist, /resume, /cancel
 export const PORT_CONFIG_API = 47990; // Web UI / config API (HTTPS, Basic Auth)
 
-// Configuração das credenciais da Web API do Sunshine, guardadas no banco local
-// do HOST (não em texto claro no config.json). São as credenciais DO Sunshine,
-// não do jogador.
-let sunshineCreds = { username: null, password: null };
+// Configuração das credenciais da Web API do Sunshine. Prioriza o config
+// persistido (arquivo 0600); o set em memória sobrepõe durante o processo.
+// São as credenciais DO Sunshine, não do jogador.
+let sunshineCreds = null;
 
 export function setSunshineCredentials(username, password) {
   sunshineCreds = { username, password };
+  // Persiste no config para sobreviver a reinício do serviço.
+  try {
+    saveConfig({ sunshineUsername: username, sunshinePassword: password });
+  } catch {
+    /* persistência é melhor esforço */
+  }
 }
 
 export function getSunshineCredentials() {
-  return { ...sunshineCreds };
+  if (sunshineCreds) return { ...sunshineCreds };
+  const cfg = loadConfig();
+  return {
+    username: cfg.sunshineUsername || null,
+    password: cfg.sunshinePassword || null,
+  };
 }
 
 // Agente HTTPS que aceita o certificado auto-assinado do Sunshine. O Sunshine
@@ -47,42 +59,61 @@ function unsafeHttpsAgent() {
   return { rejectUnauthorized: false };
 }
 
-async function configBase() {
-  const cfg = loadConfig();
-  const host = cfg.sunshineAddress.split(':')[0] || '127.0.0.1';
-  return `https://${host}:${PORT_CONFIG_API}`;
-}
-
 async function gamestreamHttpBase() {
   const cfg = loadConfig();
   const host = cfg.sunshineAddress.split(':')[0] || '127.0.0.1';
   return `http://${host}:${PORT_GAMESTREAM_HTTP}`;
 }
 
-// GET na config API com Basic Auth e TLS self-signed.
+// GET na config API com Basic Auth e TLS self-signed (via https nativo).
 async function configGet(path) {
-  const base = await configBase();
-  const creds = sunshineCreds;
+  return configRequest('GET', path, null);
+}
+
+// Nota sobre TLS self-signed: o Sunshine usa cert auto-assinado. O HOST chama a
+// config API (47990) em loopback e aceita o self-signed apenas aqui, pois o
+// tráfego é local e a API exige Basic Auth. O estado de streaming usa o HTTP
+// simples (47989) sem TLS (readServerInfo).
+
+// Requisição genérica à config API usando o https nativo (aceita self-signed).
+function configRequest(method, path, body) {
+  const creds = getSunshineCredentials();
   const auth = creds.username
     ? 'Basic ' +
       Buffer.from(`${creds.username}:${creds.password || ''}`).toString('base64')
     : undefined;
-  const res = await fetch(base + path, {
-    headers: auth ? { authorization: auth } : {},
-    // rejectUnauthorized via dispatcher não é suportado em fetch nativo; para
-    // self-signed usamos o undici com allowH2 default e checamos erro abaixo.
+  const url = new URL(path, `https://${loadConfig().sunshineAddress.split(':')[0]}:${PORT_CONFIG_API}`);
+  const payload = body ? JSON.stringify(body) : null;
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        method,
+        hostname: url.hostname,
+        port: PORT_CONFIG_API,
+        path: url.pathname + url.search,
+        rejectUnauthorized: false, // self-signed do Sunshine (loopback)
+        headers: {
+          ...(auth ? { authorization: auth } : {}),
+          ...(payload
+            ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
+            : {}),
+        },
+        timeout: 5000,
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () =>
+          resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, text: () => data, json: () => { try { return JSON.parse(data); } catch { return {}; } } })
+        );
+      }
+    );
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('timeout na API do Sunshine')));
+    if (payload) req.write(payload);
+    req.end();
   });
-  return res;
 }
-
-// Nota sobre TLS self-signed: o fetch nativo do Node rejeita certs auto-
-// assinados. Na implantação real, o Tailscale Serve fornece cert válido para o
-// painel, e a API do Sunshine fica em loopback no HOST (chamamos via 127.0.0.1),
-// onde aceitamos o auto-assinado configurando NODE_TLS_REJECT_UNAUTHORIZED=0
-// apenas para o processo de gestão, OU usando Sunshine em loopback com cert
-// confiável. Para desenvolvimento/teste, a leitura de estado usa o HTTP simples
-// (47989) que não tem TLS. A chamada à config API (47990) só é usada quando o
-// Sunshine está em loopback e o operador habilitou gestão.
 export class SunshineError extends Error {
   constructor(message, status = 0) {
     super(message);
@@ -213,21 +244,71 @@ export async function closeRunningApp() {
 }
 
 export async function configPost(path, body) {
-  const base = await configBase();
-  const creds = sunshineCreds;
-  const auth = creds.username
-    ? 'Basic ' +
-      Buffer.from(`${creds.username}:${creds.password || ''}`).toString('base64')
-    : undefined;
-  const res = await fetch(base + path, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...(auth ? { authorization: auth } : {}),
-    },
-    body: JSON.stringify(body || {}),
+  return configRequest('POST', path, body || {});
+}
+
+// Obtém o token CSRF da Web UI (necessário para POSTs vindos de browser; para
+// chamadas de serviço não-browser o Sunshine isenta, mas guardamos por robustez).
+export async function getCsrfToken() {
+  try {
+    const res = await configGet('/api/csrf-token');
+    return res.ok ? res.json().csrf_token || null : null;
+  } catch {
+    return null;
+  }
+}
+
+// Garante que existe um app "Desktop" no Sunshine (para o Moonlight abrir a
+// área de trabalho). Usa POST /api/apps com o corpo oficial do Sunshine.
+export async function ensureDesktopApp() {
+  try {
+    const apps = await configGet('/api/apps');
+    if (apps.ok) {
+      const list = apps.json().apps || [];
+      if (list.some((a) => /desktop/i.test(a.title || a.name || ''))) {
+        return { ok: true, existed: true };
+      }
+    }
+    const res = await configPost('/api/apps', {
+      name: 'Desktop',
+      title: 'Desktop',
+      cmd: '',
+      index: -1,
+      'prep-cmd': [],
+      'auto-detach': true,
+    });
+    return { ok: res.ok, status: res.status };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// Status de pareamento do Sunshine (clientes pareados + pareamentos pendentes).
+export async function readPairingStatus() {
+  const out = { clients: null, pending: null, error: null };
+  try {
+    const c = await configGet('/api/clients/list');
+    out.clients = c.ok ? c.json() : null;
+  } catch (e) {
+    out.error = e.message;
+  }
+  try {
+    const p = await configGet('/api/pin');
+    out.pending = p.ok ? p.json() : null;
+  } catch {
+    /* melhor esforço */
+  }
+  return out;
+}
+
+// Envia um PIN para concluir um pareamento pendente (fluxo oficial do Sunshine).
+export async function submitPin(pairingId, pin, name = 'moonshine-client') {
+  const res = await configPost('/api/pin', {
+    pairing_id: pairingId,
+    pin: String(pin),
+    name,
   });
-  return res;
+  return { ok: res.ok, status: res.status };
 }
 
 export { configGet };

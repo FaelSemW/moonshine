@@ -119,6 +119,25 @@ test('traversal de path estático é bloqueado', async () => {
   assert.ok(!txt.includes('"scripts"'), 'não deve expor package.json');
 });
 
+test('rota de pareamento valida PIN e pairingId', async () => {
+  const t = await login('admin', 'senha-admin-123');
+  // PIN inválido.
+  let r = await j('/api/admin/sunshine/pairing', { method: 'POST', token: t, body: { pairingId: 'a'.repeat(32), pin: '12' } });
+  assert.equal(r.status, 400);
+  // pairingId inválido.
+  r = await j('/api/admin/sunshine/pairing', { method: 'POST', token: t, body: { pairingId: 'xyz', pin: '1234' } });
+  assert.equal(r.status, 400);
+  // GET de pareamento responde (Sunshine pode estar fora do ar aqui).
+  r = await j('/api/admin/sunshine/pairing', { token: t });
+  assert.equal(r.status, 200);
+});
+
+test('rota desktop-app exige admin', async () => {
+  const tj = await login('jogadorx', 'senha-jogador-99');
+  const r = await j('/api/admin/sunshine/desktop-app', { method: 'POST', token: tj });
+  assert.equal(r.status, 403);
+});
+
 async function login(username, password) {
   const r = await j('/api/login', { method: 'POST', body: { username, password } });
   return r.data.token;

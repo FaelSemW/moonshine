@@ -1,5 +1,7 @@
 # Moonshine Cloud Gaming
 
+[![CI](https://github.com/FaelSemW/moonshine/actions/workflows/ci.yml/badge.svg)](https://github.com/FaelSemW/moonshine/actions/workflows/ci.yml)
+
 Plataforma própria de cloud gaming: um PC gamer no Bazzite fica disponível para
 um jogador por vez, que joga remotamente e tem seu ambiente temporário removido
 com segurança ao final da sessão.
@@ -33,6 +35,16 @@ npm run check    # verificação de sintaxe
 Abra `http://127.0.0.1:47990`, crie o administrador na primeira tela e use o
 painel. Em Windows/macOS o HOST opera em modo de desenvolvimento (isolamento de
 SO desativado); ele **não** finge streaming.
+
+### CLI de diagnóstico e configuração
+
+```sh
+npm run doctor          # verifica SO, GPU, Sunshine, pareamento e estado
+npm run setup-sunshine  # configura credenciais do Sunshine + app "Desktop"
+node host/src/cli.js create-user jogador1 senha123   # cria um jogador
+node host/src/cli.js state                          # estado da máquina
+node host/src/cli.js unlock                         # libera máquina travada
+```
 
 ## Implantação no Bazzite
 

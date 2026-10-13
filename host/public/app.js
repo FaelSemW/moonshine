@@ -402,6 +402,10 @@ async function renderAdminUsers(body) {
 async function renderAdminSunshine(body) {
   const info = await call('/api/admin/sunshine');
   const s = info.sunshine;
+  let pairing = { clients: null, pending: null };
+  try { pairing = (await call('/api/admin/sunshine/pairing')).pairing; } catch { /* sem creds */ }
+  const clients = pairing.clients?.named_certs || [];
+  const pending = pairing.pending?.pairings || [];
   body.innerHTML = `
     <div class="card">
       <h2>Sunshine (servidor de streaming)</h2>
@@ -412,20 +416,50 @@ async function renderAdminSunshine(body) {
         <span class="k">Ocupado</span><span class="v">${s.busy ? 'sim' : 'não'}</span>
         <span class="k">Jogo atual</span><span class="v">${s.currentGame || '—'}</span>
       </div>
+      <button class="btn secondary" id="deskApp" style="margin-top:14px">Garantir app "Desktop"</button>
+    </div>
+    <div class="card">
+      <h2>Pareamento Moonlight ↔ Sunshine</h2>
+      <p class="sub">Adicione o host no Moonlight, aguarde o PIN e digite abaixo para concluir o pareamento (fluxo oficial do Sunshine).</p>
+      <div class="kv" style="margin:10px 0">
+        <span class="k">Clientes pareados</span><span class="v">${clients.length}</span>
+        <span class="k">Pareamentos pendentes</span><span class="v">${pending.length}</span>
+      </div>
+      ${clients.map((c) => `<div class="kv"><span class="k">${c.name || c.uuid}</span><span class="v">${c.enabled ? '<span class="chip on">ativo</span>' : '<span class="chip off">inativo</span>'}</span></div>`).join('')}
+      ${pending.map((p) => `
+        <div style="margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:12px">
+          <div class="kv"><span class="k">Dispositivo</span><span class="v">${p.name || p.address || '—'}</span></div>
+          <div class="kv"><span class="k">ID</span><span class="v" style="font-size:11px">${p.id}</span></div>
+          <label>PIN (4 dígitos)</label>
+          <div class="row"><input id="pin-${p.id}" maxlength="4" inputmode="numeric" placeholder="0000" /><button class="btn" data-pin="${p.id}" style="flex:0 0 auto;width:auto;padding:0 18px">Enviar</button></div>
+        </div>`).join('') || '<p class="sub">Nenhum pareamento pendente no momento.</p>'}
     </div>
     <div class="card">
       <h2>Credenciais da Web UI do Sunshine</h2>
-      <p class="sub">Guardadas apenas em memória do serviço para falar a API do Sunshine. Não são credenciais da Steam nem do jogador.</p>
+      <p class="sub">Persistidas no config do HOST (0600) para falar a API. Não são credenciais da Steam nem do jogador.</p>
       <form id="credForm" class="stack">
         <label>Usuário Sunshine</label><input id="cu" autocomplete="off" />
         <label>Senha Sunshine</label><input id="cp" type="password" autocomplete="off" />
-        <button class="btn secondary" style="margin-top:14px">Salvar para este processo</button>
+        <button class="btn secondary" style="margin-top:14px">Salvar</button>
       </form>
     </div>`;
+  el('deskApp').onclick = async () => {
+    const r = await call('/api/admin/sunshine/desktop-app', { method: 'POST' });
+    toast(r.ok ? 'App Desktop garantido.' : 'Falha: ' + (r.error || r.status), r.ok ? 'ok' : 'error');
+  };
+  body.querySelectorAll('[data-pin]').forEach((b) => (b.onclick = async () => {
+    const pin = el('pin-' + b.dataset.pin).value;
+    try {
+      const r = await call('/api/admin/sunshine/pairing', { method: 'POST', body: { pairingId: b.dataset.pin, pin } });
+      toast(r.ok ? 'Pareamento concluído!' : 'Falha no pareamento.', r.ok ? 'ok' : 'error');
+      renderAdminSunshine(body);
+    } catch (err) { toast(err.message, 'error'); }
+  }));
   el('credForm').onsubmit = async (e) => {
     e.preventDefault();
     await call('/api/admin/sunshine/credentials', { method: 'POST', body: { username: el('cu').value, password: el('cp').value } });
-    toast('Credenciais do Sunshine salvas (memória).', 'ok');
+    toast('Credenciais do Sunshine salvas.', 'ok');
+    renderAdminSunshine(body);
   };
 }
 

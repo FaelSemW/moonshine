@@ -335,6 +335,28 @@ async function handleAdmin(req, res, url, sub) {
     const info = await sunshine.readServerInfo();
     return sendJson(res, 200, { sunshine: info });
   }
+  if (sub === 'sunshine/pairing' && method === 'GET') {
+    requireAdmin(req);
+    const p = await sunshine.readPairingStatus();
+    return sendJson(res, 200, { pairing: p });
+  }
+  if (sub === 'sunshine/pairing' && method === 'POST') {
+    requireAdmin(req);
+    const body = await readJsonBody(req);
+    if (!/^\d{4}$/.test(String(body.pin || ''))) {
+      throw new HttpError(400, 'PIN deve ter 4 dígitos');
+    }
+    if (typeof body.pairingId !== 'string' || !/^[0-9a-f]{16,64}$/i.test(body.pairingId)) {
+      throw new HttpError(400, 'pairingId inválido');
+    }
+    const r = await sunshine.submitPin(body.pairingId, body.pin, body.name || 'moonshine');
+    return sendJson(res, r.ok ? 200 : 502, r);
+  }
+  if (sub === 'sunshine/desktop-app' && method === 'POST') {
+    requireAdmin(req);
+    const r = await sunshine.ensureDesktopApp();
+    return sendJson(res, r.ok ? 200 : 502, r);
+  }
   if (sub === 'sunshine/sync' && method === 'POST') {
     requireAdmin(req);
     const r = await sunshine.ensureSunshineRunning();
