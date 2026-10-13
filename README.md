@@ -77,6 +77,7 @@ a biblioteca de jogos é **somente leitura**; se a limpeza falhar, a máquina fi
 
 ## Documentação
 
+- [docs/TESTING.md](docs/TESTING.md) — **guia de teste de ponta a ponta (comece aqui)**
 - [docs/BAZZITE.md](docs/BAZZITE.md) — instalação, configuração e recuperação
 - [docs/SECURITY.md](docs/SECURITY.md) — modelo de segurança e isolamento
 - [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md) — licenças e obrigações

@@ -4,6 +4,32 @@ Este documento lista o que **precisa ser validado em hardware real** (Bazzite co
 GPU, Android, rede Tailscale), pois o ambiente de desenvolvimento (Windows, sem
 GPU de jogo, sem Bazzite, sem Android SDK) não permite executar esses itens.
 
+## O que foi validado (evidências)
+
+### Teste real de ponta a ponta (Sunshine ativo, 2026-10-13)
+
+Executado no ambiente de desenvolvimento, apontando o HOST para um **Sunshine
+real rodando** (porta GameStream 47989). Resultados confirmados:
+
+- HOST detectou o Sunshine real → máquina `available`.
+- Login admin + criação de jogador via API.
+- Reserva de sessão → `sessionId 1`.
+- **Trava de sessão simultânea:** segunda reserva de outro usuário → **409 Conflict**.
+- `prepare` falou com o Sunshine real → sessão `active`, `streamTarget 127.0.0.1:47989`.
+- `heartbeat` mantém `active` / máquina `in-use`.
+- `end` → limpeza executada → máquina voltou a **`available`**.
+- Sessão registrada com `cleanup_ok = 1`; pasta temporária de sessões **descartada**.
+
+Este é o plano de controle completo funcionando contra um Sunshine de verdade.
+O streaming de vídeo em si (Moonlight ↔ Sunshine) e o isolamento por usuário
+dedicado dependem do hardware Bazzite (itens abaixo).
+
+### Suíte automatizada
+
+- `npm run check` → sintaxe de todos os módulos OK.
+- `npm test` → **28/28 aprovados**.
+- CI GitHub Actions → verde (build + boot do HOST + shellcheck do instalador).
+
 ## O que JÁ foi validado neste ambiente (evidências)
 
 - [x] HOST Node.js inicia e responde (`/api/health`, `/api/setup-required`).

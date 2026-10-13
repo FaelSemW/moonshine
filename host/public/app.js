@@ -240,24 +240,22 @@ function launchStream() {
   if (!currentSession?.streamTarget) return toast('Sessão sem alvo de streaming.', 'error');
   const host = currentSession.streamTarget.split(':')[0];
   const isAndroid = /android/i.test(navigator.userAgent);
-  const isMobile = /android|iphone|ipad/i.test(navigator.userAgent);
+  const host = currentSession.streamTarget.split(':')[0];
   render(`
     <div class="card">
       <h2>Streaming real via Moonlight</h2>
-      <p class="sub">O vídeo, áudio e controles são transmitidos pelo <strong>Moonlight</strong> (projeto oficial), que conecta ao seu PC. O Moonshine reserva a sessão e libera o PC ao final.</p>
+      <p class="sub">O vídeo, áudio e controles são transmitidos pelo <strong>Moonlight</strong> (projeto oficial), que conecta direto ao seu PC. O Moonshine reserva a sessão e libera o PC ao final.</p>
       <div class="kv" style="margin:14px 0">
-        <span class="k">Host Sunshine</span><span class="v">${host}</span>
+        <span class="k">Host Sunshine</span><span class="v" style="font-weight:700">${host}</span>
         <span class="k">Porta GameStream</span><span class="v">47984 / 47989</span>
       </div>
-      ${isMobile
-        ? `<a class="btn" href="moonlight://launch?host=${host}">Abrir no Moonlight</a>`
-        : `<button class="btn" id="openMl">Abrir Moonlight (moonlight://)</button>`}
-      <button class="btn secondary" id="copyHost" style="margin-top:10px">Copiar endereço do host</button>
+      <div class="kv" style="margin:6px 0 14px;padding:12px;border:1px solid var(--line);border-radius:12px">
+        <span class="k" style="line-height:1.5">Como jogar:<br>1. Abra o app <strong>Moonlight</strong>.<br>2. Adicione o host <strong>${host}</strong> (descoberta automática ou "Add computer" manual).<br>3. Se pedir PIN, use o pareador do painel admin.<br>4. Toque no host para iniciar o streaming.</span>
+      </div>
+      <button class="btn" id="copyHost">Copiar endereço do host</button>
       <button class="btn danger" id="endMl" style="margin-top:10px">Encerrar sessão</button>
-      <p class="sub" style="margin-top:14px">Se o Moonlight não estiver pareado com este PC, pareie usando o PIN exibido no painel do administrador (Sunshine → Parear).</p>
+      <p class="sub" style="margin-top:14px">Nota: o app Moonlight oficial não expõe um esquema <code>moonlight://</code> registrado, então a abertura automática não é garantida — por isso o passo a passo acima. O streaming em si é 100% real (Sunshine + Moonlight).</p>
     </div>`);
-  const openMl = el('openMl');
-  if (openMl) openMl.onclick = () => { window.location.href = `moonlight://launch?host=${host}`; };
   el('copyHost').onclick = async () => {
     try { await navigator.clipboard.writeText(host); toast('Host copiado.', 'ok'); }
     catch { toast('Copie manualmente: ' + host, 'error'); }
