@@ -36,14 +36,13 @@ SO desativado); ele **não** finge streaming.
 
 ## Implantação no Bazzite
 
-Siga [docs/BAZZITE.md](docs/BAZZITE.md). Resumo:
+Siga [docs/BAZZITE.md](docs/BAZZITE.md). **Um comando** no Desktop Mode do Bazzite (sem sudo):
 
 ```bash
-bash deploy/bazzite/install.sh   # no Desktop Mode, sem sudo no principal
+curl -fsSL https://raw.githubusercontent.com/FaelSemW/moonshine/main/deploy/bazzite/install.sh | bash
 ```
 
-Instala Node.js local (sem root), garante o Sunshine via Flatpak oficial e
-registra uma user unit do systemd. Nada altera a raiz imutável.
+Instala Node.js local (sem root), garante o Sunshine via Flatpak oficial, clona o código para `~/moonshine` e registra uma user unit do systemd. Nada altera a raiz imutável.
 
 ## Arquitetura
 

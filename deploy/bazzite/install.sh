@@ -20,7 +20,7 @@
 set -euo pipefail
 
 # ----------------------------------------------------------------- bootstrap -
-REPO_URL="${MOONSHINE_REPO:-https://github.com/moonshine-cloud/moonshine.git}"
+REPO_URL="${MOONSHINE_REPO:-https://github.com/FaelSemW/moonshine.git}"
 BRANCH="${MOONSHINE_BRANCH:-main}"
 MOON_DIR="${MOONSHINE_DIR:-$HOME/moonshine}"
 BOOTSTRAPPED="${MOONSHINE_BOOTSTRAPPED:-}"

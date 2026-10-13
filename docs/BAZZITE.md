@@ -17,16 +17,19 @@ Nada disso altera a raiz imutável.
 
 ## Instalação (Desktop Mode)
 
-1. Copie o conteúdo do projeto para `~/moonshine` (pastas `host/`, `client/`,
-   `deploy/`, `package.json`, etc.).
-2. No terminal do Desktop Mode (sem sudo no comando principal):
+1. No terminal do Desktop Mode do Bazzite (sem sudo no comando principal), rode o instalador de um comando só — ele baixa o código para `~/moonshine` e instala tudo:
 
 ```bash
-bash ~/moonshine/deploy/bazzite/install.sh
+curl -fsSL https://raw.githubusercontent.com/FaelSemW/moonshine/main/deploy/bazzite/install.sh | bash
 ```
+
+(Alternativa, se você já clonou o repo na mão: `bash ~/moonshine/deploy/bazzite/install.sh`.)
 
 O script:
 - instala Node.js local se ausente;
+2. O script:
+- instala Node.js local se ausente;
+- baixa o código para `~/moonshine`;
 - instala/ativa o Sunshine via Flatpak;
 - registra e habilita a user unit `moonshine-host.service`;
 - imprime instruções do Tailscale.
