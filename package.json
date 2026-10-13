@@ -15,7 +15,7 @@
     "start": "node host/src/index.js",
     "doctor": "node host/src/cli.js doctor",
     "setup-sunshine": "node host/src/cli.js setup-sunshine",
-    "check": "node --check host/src/index.js && node --check host/src/server.js && node --check host/src/auth.js && node --check host/src/db.js && node --check host/src/session.js && node --check host/src/sunshine.js && node --check host/src/isolation.js && node --check host/src/probe.js && node --check host/src/config.js && node --check host/src/cli.js",
+    "check": "node --check host/src/index.js && node --check host/src/server.js && node --check host/src/auth.js && node --check host/src/db.js && node --check host/src/session.js && node --check host/src/sunshine.js && node --check host/src/isolation.js && node --check host/src/probe.js && node --check host/src/config.js && node --check host/src/cli.js && node --check host/public/app.js",
     "test": "node --test tests/test-*.js"
   }
 }

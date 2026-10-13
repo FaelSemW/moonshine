@@ -239,8 +239,6 @@ function setPhase(p, msg) {
 function launchStream() {
   if (!currentSession?.streamTarget) return toast('Sessão sem alvo de streaming.', 'error');
   const host = currentSession.streamTarget.split(':')[0];
-  const isAndroid = /android/i.test(navigator.userAgent);
-  const host = currentSession.streamTarget.split(':')[0];
   render(`
     <div class="card">
       <h2>Streaming real via Moonlight</h2>
@@ -286,6 +284,7 @@ async function screenAdmin() {
     <div class="wide">
       <div class="tabs">
         <button class="tab active" data-t="status">Estado</button>
+        <button class="tab" data-t="setup">Configuração</button>
         <button class="tab" data-t="users">Jogadores</button>
         <button class="tab" data-t="sunshine">Sunshine</button>
         <button class="tab" data-t="logs">Registros</button>
@@ -308,6 +307,7 @@ async function adminTab(t) {
   body.innerHTML = '<div class="spinner"></div>';
   try {
     if (t === 'status') return renderAdminStatus(body);
+    if (t === 'setup') return renderAdminSetup(body);
     if (t === 'users') return renderAdminUsers(body);
     if (t === 'sunshine') return renderAdminSunshine(body);
     if (t === 'logs') return renderAdminLogs(body);
@@ -316,8 +316,94 @@ async function adminTab(t) {
   } catch (err) { body.innerHTML = `<div class="card"><p class="sub">${err.message}</p></div>`; }
 }
 
-async function renderAdminStatus(body) {
-  const st = await call('/api/state');
+// Assistente de configuração completo — tudo no app do HOST (sem CLI/docs).
+// Passos: ambiente → Sunshine → rede/Tailscale → teste.
+async function renderAdminSetup(body) {
+  let compat, net, sun = null;
+  try {
+    [compat, net] = await Promise.all([
+      call('/api/admin/compatibility'),
+      call('/api/admin/network'),
+    ]);
+    sun = (await call('/api/admin/sunshine')).sunshine;
+  } catch (e) {
+    body.innerHTML = `<div class="card"><p class="sub">${e.message}</p></div>`;
+    return;
+  }
+  const ts = net.tailscale;
+  const step = (n, title, inner) => `
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <span class="chip ${n ? 'on' : 'warn'}">${n ? '✓' : '!'}</span>
+        <h2 style="margin:0;font-size:17px">${title}</h2>
+      </div>
+      ${inner}
+    </div>`;
+  const gpuOk = compat.gpu.vendor !== 'unknown';
+  body.innerHTML = `
+    ${step(compat.ok, '1 · Ambiente', `
+      <div class="kv">
+        <span class="k">Sistema</span><span class="v">${compat.os.platform} ${compat.os.osRelease?.pretty || compat.os.release}</span>
+        <span class="k">Bazzite</span><span class="v">${compat.os.osRelease?.isBazzite ? 'sim' : 'não'}</span>
+        <span class="k">GPU</span><span class="v">${gpuOk ? compat.gpu.gpus.join(', ') : '<span class="chip off">não detectada</span>'}</span>
+        <span class="k">RAM</span><span class="v">${compat.resources.memTotalGb} GB</span>
+      </div>
+      ${compat.issues.map((i) => `<p class="sub" style="color:var(--red);margin:8px 0 0">• ${i}</p>`).join('')}
+      ${compat.notes.map((n) => `<p class="sub" style="margin:6px 0 0">• ${n}</p>`).join('')}`)}
+
+    ${step(!!sun?.reachable, '2 · Sunshine (streaming)', `
+      <div class="kv">
+        <span class="k">Alcançável</span><span class="v">${sun?.reachable ? '<span class="chip on">sim</span>' : '<span class="chip off">não</span>'}</span>
+        <span class="k">Hostname</span><span class="v">${sun?.hostname || '—'}</span>
+        <span class="k">Ocupado</span><span class="v">${sun?.busy ? 'sim' : 'não'}</span>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn secondary" id="suSync">Sincronizar</button>
+        <button class="btn secondary" id="suDesk">App "Desktop"</button>
+      </div>
+      ${!sun?.reachable ? '<p class="sub" style="color:var(--red);margin:8px 0 0">Abra o Sunshine (Flatpak) e clique em Sincronizar.</p>' : ''}`)}
+
+    ${step(ts.running && ts.ip, '3 · Rede para amigos (Tailscale)', `
+      <p class="sub" style="margin:0 0 8px">Para amigos jogarem de fora, exponha o painel e o Sunshine por uma rede privada. Nada fica na internet pública.</p>
+      <div class="kv">
+        <span class="k">Tailscale instalado</span><span class="v">${ts.installed ? '<span class="chip on">sim</span>' : '<span class="chip off">não</span>'}</span>
+        <span class="k">Rede ativa</span><span class="v">${ts.running ? '<span class="chip on">sim</span>' : '<span class="chip off">não</span>'}</span>
+        <span class="k">IP privado</span><span class="v">${ts.ip || '—'}</span>
+        <span class="k">Painel escutando em</span><span class="v">${net.bindHost}:${net.port}</span>
+      </div>
+      ${!ts.installed ? `<p class="sub" style="margin:10px 0 4px">Instale (Bazzite):</p><code style="display:block;background:var(--bg);padding:10px;border-radius:8px;font-size:12px">flatpak install -y flathub com.tailscale.tailscale</code>` : ''}
+      ${ts.running && ts.ip && net.bindHost === '127.0.0.1' ? `
+        <button class="btn" id="bindTs" style="margin-top:14px">Expor painel no IP Tailscale (${ts.ip})</button>` : ''}
+      ${ts.running ? `<p class="sub" style="margin:12px 0 0">Depois, no terminal do Bazzite, termine o HTTPS:</p><code style="display:block;background:var(--bg);padding:10px;border-radius:8px;font-size:12px">tailscale serve --bg --https=443 http://127.0.0.1:${net.port}</code><p class="sub" style="margin:6px 0 0">Amigos instalam Tailscale e você os convida. Depois abrem <strong>https://${ts.ip}</strong> e entram com o jogador criado em "Jogadores".</p>` : ''}`)}
+
+    <div class="card">
+      <h2>4 · Amigos (convite)</h2>
+      <p class="sub" style="margin:0 0 8px">Cada amigo recebe: (a) um login de jogador (aba <strong>Jogadores</strong>), e (b) um convite do Tailscale. Eles abrem o endereço privado, entram e jogam pelo Moonlight. Só um jogador por vez.</p>
+      <button class="btn secondary" id="goUsers">Ir para Jogadores</button>
+    </div>`;
+
+  const b = (id, fn) => { const e = el(id); if (e) e.onclick = fn; };
+  b('suSync', async () => {
+    const r = await call('/api/admin/sunshine/sync', { method: 'POST' });
+    toast(r.sunshine.reachable ? 'Sunshine OK.' : 'Sunshine indisponível.', r.sunshine.reachable ? 'ok' : 'error');
+    renderAdminSetup(body);
+  });
+  b('suDesk', async () => {
+    const r = await call('/api/admin/sunshine/desktop-app', { method: 'POST' });
+    toast(r.ok ? 'App Desktop garantido.' : 'Falha: ' + (r.error || ''), r.ok ? 'ok' : 'error');
+  });
+  b('bindTs', async () => {
+    await call('/api/admin/network', { method: 'POST', body: { bindHost: ts.ip } });
+    toast('Painel apontado para o Tailscale. Reinicie o serviço para aplicar.', 'ok');
+    renderAdminSetup(body);
+  });
+  b('goUsers', () => {
+    view.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x.dataset.t === 'users'));
+    adminTab('users');
+  });
+}
+
+async function renderAdminStatus(body) {  const st = await call('/api/state');
   const sessions = await call('/api/admin/sessions');
   const s = st.machine.state;
   body.innerHTML = `

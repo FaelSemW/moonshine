@@ -138,6 +138,25 @@ test('rota desktop-app exige admin', async () => {
   assert.equal(r.status, 403);
 });
 
+test('rede: GET mostra bind e Tailscale; POST valida bindHost', async () => {
+  const t = await login('admin', 'senha-admin-123');
+  // GET
+  let r = await j('/api/admin/network', { token: t });
+  assert.equal(r.status, 200);
+  assert.ok(r.data.bindHost);
+  assert.ok(r.data.tailscale);
+  // POST com bindHost inválido.
+  r = await j('/api/admin/network', { method: 'POST', token: t, body: { bindHost: '$(rm -rf /)' } });
+  assert.equal(r.status, 400);
+  // POST com sunshineAddress inválido.
+  r = await j('/api/admin/network', { method: 'POST', token: t, body: { sunshineAddress: 'host sem porta' } });
+  assert.equal(r.status, 400);
+  // POST válido (bindHost padrão mantido).
+  r = await j('/api/admin/network', { method: 'POST', token: t, body: { bindHost: '127.0.0.1' } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.requiresRestart, true);
+});
+
 async function login(username, password) {
   const r = await j('/api/login', { method: 'POST', body: { username, password } });
   return r.data.token;

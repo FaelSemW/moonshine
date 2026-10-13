@@ -17,8 +17,8 @@ import * as db from './db.js';
 import * as auth from './auth.js';
 import * as session from './session.js';
 import * as sunshine from './sunshine.js';
-import { compatibilityReport } from './probe.js';
-import { loadConfig } from './config.js';
+import { compatibilityReport, detectTailscale } from './probe.js';
+import { loadConfig, saveConfig } from './config.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(here, '..', 'public');
@@ -383,6 +383,35 @@ async function handleAdmin(req, res, url, sub) {
   if (sub === 'compatibility' && method === 'GET') {
     requireAdmin(req);
     return sendJson(res, 200, compatibilityReport());
+  }
+  if (sub === 'network' && method === 'GET') {
+    requireAdmin(req);
+    const cfg = loadConfig();
+    return sendJson(res, 200, {
+      bindHost: cfg.bindHost,
+      port: cfg.port,
+      tailscale: detectTailscale(),
+      sunshineAddress: cfg.sunshineAddress,
+    });
+  }
+  if (sub === 'network' && method === 'POST') {
+    requireAdmin(req);
+    const body = await readJsonBody(req);
+    const patch = {};
+    if (body.bindHost !== undefined) {
+      if (typeof body.bindHost !== 'string' || !/^[\d.]{3,15}$|^[a-fA-F0-9:]{3,45}$|^[a-z0-9.-]{3,255}$/.test(body.bindHost)) {
+        throw new HttpError(400, 'bindHost inválido');
+      }
+      patch.bindHost = body.bindHost;
+    }
+    if (body.sunshineAddress !== undefined) {
+      if (typeof body.sunshineAddress !== 'string' || !/^[a-zA-Z0-9.-]+:\d{1,5}$/.test(body.sunshineAddress)) {
+        throw new HttpError(400, 'endereço do Sunshine inválido (host:porta)');
+      }
+      patch.sunshineAddress = body.sunshineAddress;
+    }
+    if (Object.keys(patch).length) saveConfig(patch);
+    return sendJson(res, 200, { ok: true, requiresRestart: true, config: loadConfig() });
   }
 
   throw new HttpError(404, 'rota administrativa não encontrada');

@@ -151,3 +151,52 @@ export function compatibilityReport() {
   const ok = issues.length === 0;
   return { ok, os: osInfo, gpu, resources: res, tooling, issues, notes };
 }
+
+// Detecta a interface/rede Tailscale e o IP 100.x usado para expor o HOST de
+// forma privada. Retorna o estado para o assistente de configuração do painel.
+export function detectTailscale() {
+  const out = {
+    installed: false,
+    running: false,
+    ip: null,
+    iface: null,
+    serveConfigured: false,
+    error: null,
+  };
+  const which = run('which', ['tailscale']);
+  if (!which) {
+    out.error = 'tailscale não encontrado (instale via Flatpak ou binário)';
+    return out;
+  }
+  out.installed = true;
+  // IP do tailscale.
+  const ip = run('tailscale', ['ip', '-4']);
+  if (ip) {
+    out.ip = ip.split('\n')[0].trim();
+    out.running = true;
+  } else {
+    out.error = 'tailscale instalado mas sem IP (fora da rede?)';
+  }
+  // Status.
+  const status = run('tailscale', ['status', '--json']);
+  if (status) {
+    try {
+      const j = JSON.parse(status);
+      out.running = !!j.Self && j.BackendState === 'Running';
+      out.iface = j.Self?.TUN ? 'tailscale0' : null;
+    } catch {
+      /* melhor esforço */
+    }
+  }
+  // tailscale serve: verifica se há config de serve (HTTPS).
+  const serve = run('tailscale', ['serve', 'status', '--json']);
+  if (serve) {
+    try {
+      const s = JSON.parse(serve);
+      out.serveConfigured = Array.isArray(s) ? s.length > 0 : Object.keys(s).length > 0;
+    } catch {
+      /* melhor esforço */
+    }
+  }
+  return out;
+}
