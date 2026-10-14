@@ -32,13 +32,20 @@ exatos estão registrados abaixo para rastreabilidade.
   - SHA verificado: `b48494cb96bff23d8886c4775cc4f39a1075495d` (2026-09-12)
 - Repositório (biblioteca comum C): https://github.com/moonlight-stream/moonlight-common-c — GPL-3.0
   - SHA verificado: `f900dd4767759c7b9d0e93bcea666b55c69ea62f` (2026-09-26)
-- Uso neste projeto: **componentes externos**. O cliente Moonshine reserva a
-  sessão no HOST e então delega o streaming real ao Moonlight, que conecta
-  diretamente no Sunshine. Em Android usa-se o deep-link `moonlight://`; em
-  desktop, o Moonlight-Qt pareado. Não simulamos vídeo/áudio/controles.
-- Obrigações: incorporar moonlight-common-c em um app (por exemplo,decoder
-  embutido) tornaria o app derivado GPL-3, exigindo publicar o código-fonte. A
-  primeira versão **não** incorpora; usa o app Moonlight instalado.
+- Uso neste projeto: o **cliente Android** (`client/android/`) **embuti** o
+  moonlight-android (código, recursos e build nativo ndkBuild) dentro do próprio
+  APK, junto com `moonlight-common-c` (submódulo fixado no SHA acima) e as
+  bibliotecas nativas openssl/opus. O resultado é **um único app**: a tela de
+  controle do Moonshine (login → reserva → sessão) e o streaming real do
+  Moonlight. Não simulamos vídeo/áudio/controles. O **HOST** continua usando o
+  Sunshine como Flatpak externo (não incorpora Sunshine). O cliente
+  **Windows/Linux** seguirá o mesmo padrão, incorporando o moonlight-qt.
+- Obrigações: incorporar moonlight-android/moonlight-common-c torna o app
+  derivado **GPL-3**. Cumprimos publicando o **código-fonte integral** neste
+  mesmo repositório público: o código do moonlight-android embarcado está
+  versionado em `client/android/app/src/main/`, e o `moonlight-common-c` é um
+  submódulo fixado no SHA público acima. O `applicationId` foi trocado para
+  `com.moonshine.client` (pedido explícito dos mantenedores do Moonlight).
 
 ## Licença deste projeto
 
@@ -50,12 +57,13 @@ redistribuição conjunta, quando necessária.
 
 | Ação | Exige publicar código-fonte? |
 |---|---|
-| Usar Sunshine/Moonlight instalados pelo usuário (Flatpak/app) | Não |
+| HOST usa Sunshine como Flatpak externo | Não |
 | Redistribuir binário Sunshine junto do seu produto | Sim (GPL-3 do Sunshine) |
-| Incorporar moonlight-common-c no seu app | Sim (GPL-3) |
+| Cliente Android embute moonlight-android/common-c | Sim — publicado aqui (GPL-3) |
 | Serviço de controle Moonshine (nosso código) | Sim (publicado como GPL-3) |
 
-> Nota honesta: a primeira versão usa os apps Sunshine e Moonlight como
-> componentes externos instalados. Se num release futuro o streaming for
-> embutido via moonlight-common-c, o release passa a ser GPL-3 completo e o
-> código-fonte integral deve ser oferecido ao usuário.
+> Nota honesta: o cliente Android **já incorpora** moonlight-android e
+> moonlight-common-c; por isso é um derivado GPL-3 e o código-fonte integral é
+> oferecido neste repositório público. O HOST **não** incorpora Sunshine (usa o
+> Flatpak externo). O cliente Windows/Linux incorporará moonlight-qt sob a mesma
+> obrigação de publicar o código-fonte.
