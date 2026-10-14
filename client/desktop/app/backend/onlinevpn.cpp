@@ -119,10 +119,12 @@ OnlineVpn::ProcResult OnlineVpn::run(const QString& exe, const QStringList& args
     QEventLoop loop;
     QTimer timer;
     timer.setSingleShot(true);
+    bool startedFlag = false;
     bool finishedFlag = false;
     int exitCode = -1;
 
     // Drena os canais enquanto o processo roda (evita deadlock de pipe cheio).
+    connect(&p, &QProcess::started, &p, [&]() { startedFlag = true; });
     connect(&p, &QProcess::readyReadStandardOutput, &p,
             [&]() { outBuf += p.readAllStandardOutput(); });
     connect(&p, &QProcess::readyReadStandardError, &p,
@@ -136,9 +138,15 @@ OnlineVpn::ProcResult OnlineVpn::run(const QString& exe, const QStringList& args
     connect(&timer, &QTimer::timeout, &loop, [&]() { loop.quit(); });
 
     p.start(exe, args);
-    if (!p.waitForStarted(10000)) {
+    // Espera o processo subir SEM travar a UI (poll com eventos, 10 s).
+    QElapsedTimer st;
+    st.start();
+    while (!startedFlag && !finishedFlag && st.elapsed() < 10000) {
+        waitMs(50);
+    }
+    if (!startedFlag) {
         r.err = p.errorString();
-        return r; // nem chegou a rodar
+        return r; // nem chegou a rodar (exe inexistente, sem permissão, ...)
     }
     r.started = true;
 
@@ -156,7 +164,14 @@ OnlineVpn::ProcResult OnlineVpn::run(const QString& exe, const QStringList& args
     } else {
         r.timedOut = true;
         p.kill();
-        p.waitForFinished(3000);
+        // Espera a morte com eventos (mesma coisa que waitForFinished, só
+        // que a janela continua respondendo).
+        QElapsedTimer kt;
+        kt.start();
+        while (!finishedFlag && kt.elapsed() < 3000) {
+            waitMs(50);
+        }
+        r.exitCode = exitCode;
     }
     return r;
 }
@@ -240,22 +255,31 @@ bool OnlineVpn::downloadMsi(QString* msiPath, QString* err)
     return true;
 }
 
-// Autenticode: só segue com Status "Valid" (2) e assinante contendo
-// "Tailscale" — o download é por HTTPS, mas assinatura é a prova real.
+// Autenticidade (Authenticode): só segue com Status "Valid" (texto, não
+// número) e assinante citando "Tailscale" — HTTPS garante o caminho, mas
+// a assinatura é a prova real de que o binário é deles.
 bool OnlineVpn::verifySignature(const QString& msiPath, QString* err)
 {
     const QString aviso =
         tr("Instalador do Tailscale não passou na verificação de assinatura — baixe "
            "manualmente em https://tailscale.com/download/windows");
 
+    // -LiteralPath (não -FilePath): sem curinga, um "[" no caminho não
+    // casa outro arquivo. Aspas duplicadas escapam um ' no caminho.
+    const QString safePath = QString(msiPath).replace(QLatin1Char('\''), QStringLiteral("''"));
     const QString script =
-        // Status como TEXTO: o enum do PowerShell serializa de um jeito por
-        // versão (Valid=0 e NotSigned=2 no 5.1) — texto não mente.
-        QStringLiteral("Get-AuthenticodeSignature -FilePath '%1' | "
+        // Status em TEXTO (o enum serializa diferente por versão: no
+        // PowerShell 5.1 Valid=0 e NotSigned=2 — número mente) e o resto
+        // forçado em ASCII: a saída vai na codepage do console e um acento
+        // quebraria o JSON neste parser.
+        QStringLiteral("Get-AuthenticodeSignature -LiteralPath '%1' | "
                        "Select-Object @{n='Status';e={$_.Status.ToString()}},"
-                       "StatusMessage,@{n='Signer';e={$_.SignerCertificate.Subject}} | "
+                       "@{n='StatusMessage';e={($_.StatusMessage -replace "
+                       "'[^\\x20-\\x7E]','?')}},"
+                       "@{n='Signer';e={($_.SignerCertificate.Subject -replace "
+                       "'[^\\x20-\\x7E]','?')}} | "
                        "ConvertTo-Json -Compress")
-            .arg(msiPath);
+            .arg(safePath);
     const ProcResult r = run(QStringLiteral("powershell.exe"),
                              {QStringLiteral("-NoProfile"), QStringLiteral("-NonInteractive"),
                               QStringLiteral("-Command"), script},
@@ -266,10 +290,10 @@ bool OnlineVpn::verifySignature(const QString& msiPath, QString* err)
     }
 
     const QJsonObject o = QJsonDocument::fromJson(r.out.toUtf8()).object();
-    const QJsonValue status = o["Status"];
-    // Só "Valid" passa; o 0 é o Valid numérico do PowerShell (redundância).
-    const bool valid = status.toString().compare(QStringLiteral("Valid"), Qt::CaseInsensitive) == 0 ||
-                       (status.isDouble() && status.toInt(-1) == 0);
+    // Só "Valid" passa (nada de confiar em número) e o assinante precisa
+    // citar "Tailscale" — recusa no menor sinal de adulteração.
+    const bool valid =
+        o["Status"].toString().compare(QStringLiteral("Valid"), Qt::CaseInsensitive) == 0;
     const QString signer = o["Signer"].toString();
     if (!valid || !signer.contains(QStringLiteral("Tailscale"), Qt::CaseInsensitive)) {
         *err = aviso;
@@ -371,11 +395,12 @@ void OnlineVpn::ensureOnline(const QString& authKey, const QString& controlUrl,
             done(false, err);
             return;
         }
-        emit statusChanged(tr("Instalando o Tailscale (elevação necessária)..."));
+        // Verifica ANTES de pedir a elevação (se não for deles, nem UAC).
         if (!verifySignature(msi, &err)) {
             done(false, err);
             return;
         }
+        emit statusChanged(tr("Instalando o Tailscale (elevação necessária)..."));
         if (!installMsi(msi, &err)) {
             done(false, err);
             return;
@@ -393,10 +418,11 @@ void OnlineVpn::ensureOnline(const QString& authKey, const QString& controlUrl,
     }
     m_cli = cli;
 
-    // 2) Estado ANTES do nosso login: se o PC já está em outra rede, a
+    // 2) Estado ANTES do nosso login: se o PC já está em OUTRA rede, a
     //    conexão não é nossa — nunca vamos deslogar o que é do usuário.
+    //    Sessão que entramos numa tentativa anterior conta como NOSSA.
     const TsState before = queryState(cli);
-    const bool wasRunning = before.reachable && before.running;
+    const bool wasRunning = before.reachable && before.running && !m_oursLoggedIn;
 
     // Logo após instalar, o serviço do Tailscale ainda está subindo.
     if (justInstalled) {
