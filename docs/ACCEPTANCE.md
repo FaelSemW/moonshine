@@ -30,6 +30,17 @@ dedicado dependem do hardware Bazzite (itens abaixo).
 - `npm test` → **28/28 aprovados**.
 - CI GitHub Actions → verde (build + boot do HOST + shellcheck do instalador).
 
+### Cliente Android — compila para APK (CI, 2026-10-14)
+
+O cliente Android (`client/android/`) é **um único APK** que embute o controle do
+Moonshine e o streaming do Moonlight (moonlight-android + submodule
+moonlight-common-c). O workflow **Cliente Android** compilou com sucesso no
+GitHub Actions:
+
+- JDK 17 + NDK `29.0.14206865`; `moonlight-common-c` fixado no SHA oficial.
+- `./gradlew assembleNonRootDebug` → **verde**.
+- Artefato `moonshine-client-android` (APK, **16,4 MB**) publicado.
+
 ## O que JÁ foi validado neste ambiente (evidências)
 
 - [x] HOST Node.js inicia e responde (`/api/health`, `/api/setup-required`).
@@ -74,9 +85,13 @@ Procedimento para reproduzir: `npm test` e `npm start` nesta máquina.
 
 ## Pendente — Cliente
 
-- [ ] Android: app/PWA instalado, autentica e reserva; deep-link `moonlight://`
-      abre o Moonlight real.
-- [ ] Windows/Linux: navegador/PWA autentica e reserva; Moonlight-Qt pareado.
+- [x] Android: APK compila no CI (Moonshine + Moonlight embutido,
+      `applicationId com.moonshine.client`). Artefato `moonshine-client-android`.
+- [ ] Android (hardware): instalar o APK num aparelho real, autenticar no HOST,
+      reservar, parear (PIN do Sunshine na 1ª vez) e confirmar o streaming real.
+      Procedimento: ver `docs/ANDROID.md`.
+- [ ] Windows/Linux: (planejado) app de desktop embutindo o moonlight-qt, no
+      mesmo padrão do Android. Até lá, usa-se a PWA no navegador + Moonlight-Qt.
 
 ## Como cada pendência será confirmada
 

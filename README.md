@@ -1,6 +1,6 @@
 # Moonshine Cloud Gaming
 
-[![CI](https://github.com/FaelSemW/moonshine/actions/workflows/ci.yml/badge.svg)](https://github.com/FaelSemW/moonshine/actions/workflows/ci.yml)
+[![CI](https://github.com/FaelSemW/moonshine/actions/workflows/ci.yml/badge.svg)](https://github.com/FaelSemW/moonshine/actions/workflows/ci.yml) [![Cliente Android](https://github.com/FaelSemW/moonshine/actions/workflows/android.yml/badge.svg)](https://github.com/FaelSemW/moonshine/actions/workflows/android.yml)
 
 Plataforma própria de cloud gaming: um PC gamer no Bazzite fica disponível para
 um jogador por vez, que joga remotamente e tem seu ambiente temporário removido
@@ -13,13 +13,17 @@ streaming) e **Moonlight** (clientes), ambos GPL-3.0. Nenhum deles é reescrito.
   reserva exclusiva, isolamento de sessão, gestão do Sunshine e painel
   administrativo integrado. Escuta em loopback; exposto na rede privada via
   Tailscale Serve.
-- **CLIENTE:** interface web/PWA (Android e desktop) que autentica, mostra o
-  estado em tempo real, reserva a sessão e então delega o **streaming real** ao
-  Moonlight, que conecta direto no Sunshine.
+- **CLIENTE Android:** app de **um único APK** que embute o controle do Moonshine
+  e o **streaming real do Moonlight** (moonlight-android + moonlight-common-c
+  dentro do próprio app). Compilado no CI (artefato `moonshine-client-android`).
+  Há também uma **interface web/PWA** usável em qualquer navegador.
+- **CLIENTE Windows/Linux:** (planejado) app de desktop embutindo o moonlight-qt,
+  no mesmo padrão do Android. Até lá, usa-se a PWA + Moonlight-Qt externo.
 
-> **Honestidade técnica:** o vídeo, áudio e controles são transmitidos pelo
-> Moonlight (app oficial), não embutidos nesta versão. O Moonshine é o **plano
-> de controle**: autoriza, reserva, prepara, monitora e limpa. Ver
+> **Honestidade técnica:** o Moonshine é o **plano de controle** (autoriza,
+> reserva, prepara, monitora e limpa). No **app Android** o vídeo/áudio/controles
+> são do Moonlight **embutido** no mesmo APK; na **web/PWA** (desktop) o streaming
+> continua pelo Moonlight externo até o app desktop ficar pronto. Ver
 > [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md) e [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md).
 
 ## Executar o HOST (desenvolvimento)
@@ -28,7 +32,7 @@ Requer Node.js 22.5+ (testado com 22.23.3). Sem dependências npm externas.
 
 ```sh
 npm start        # sobe em http://127.0.0.1:47990
-npm test         # 26 testes automatizados
+npm test         # 29 testes automatizados
 npm run check    # verificação de sintaxe
 ```
 
@@ -59,10 +63,10 @@ Instala Node.js local (sem root), garante o Sunshine via Flatpak oficial, clona 
 ## Arquitetura
 
 ```
-Cliente (web/PWA)  ──HTTP/Tailscale──►  HOST Moonshine (Node+SQLite)
-   │  autentica, reserva, estado            │ valida, reserva, prepara,
-   │                                        │ monitora, limpa
-   └──moonlight://──► Moonlight ──GameStream──► Sunshine ──► GPU/jogo
+Cliente (Android/PWA) ──HTTP/Tailscale──► HOST Moonshine (Node+SQLite)
+   │  autentica, reserva, estado             │ valida, reserva, prepara,
+   │                                         │ monitora, limpa
+   └──► Moonlight (embutido no app) ──GameStream──► Sunshine ──► GPU/jogo
 ```
 
 - O **vídeo/áudio/entra­da** vai direto Moonlight ↔ Sunshine (baixa latência).
@@ -78,6 +82,7 @@ a biblioteca de jogos é **somente leitura**; se a limpeza falhar, a máquina fi
 ## Documentação
 
 - [docs/TESTING.md](docs/TESTING.md) — **guia de teste de ponta a ponta (comece aqui)**
+- [docs/ANDROID.md](docs/ANDROID.md) — cliente Android: compilar e instalar o APK
 - [docs/BAZZITE.md](docs/BAZZITE.md) — instalação, configuração e recuperação
 - [docs/SECURITY.md](docs/SECURITY.md) — modelo de segurança e isolamento
 - [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md) — licenças e obrigações
