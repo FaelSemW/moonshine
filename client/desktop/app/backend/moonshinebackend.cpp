@@ -50,11 +50,48 @@ void MoonshineBackend::login(const QString& baseUrl,
                  if (status == 200) {
                      QJsonObject r = QJsonDocument::fromJson(body).object();
                      m_token = r["token"].toString();
+                     if (m_grantedMode != QStringLiteral("game")) {
+                         m_grantedMode = QStringLiteral("game");
+                         emit grantedModeChanged();
+                     }
                      emit loginFinished(true, "");
                  } else {
                      QJsonObject e = QJsonDocument::fromJson(body).object();
                      QString err = e["error"].toString();
                      emit loginFinished(false, err.isEmpty() ? QString::number(status) : err);
+                 }
+             });
+}
+
+void MoonshineBackend::redeem(const QString& baseUrl, const QString& code)
+{
+    m_baseUrl = baseUrl.trimmed();
+    while (m_baseUrl.endsWith('/')) {
+        m_baseUrl.chop(1);
+    }
+    m_token.clear();
+
+    QJsonObject o;
+    o["code"] = code;
+
+    emit statusChanged(tr("Resgatando código..."));
+    postJson("/api/redeem", QJsonDocument(o).toJson(QJsonDocument::Compact), false,
+             [this](int status, const QByteArray& body) {
+                 if (status == 200) {
+                     QJsonObject r = QJsonDocument::fromJson(body).object();
+                     m_token = r["token"].toString();
+                     QString mode = r["mode"].toString();
+                     if (mode.isEmpty()) {
+                         mode = QStringLiteral("game");
+                     }
+                     m_grantedMode = mode;
+                     emit grantedModeChanged();
+                     emit redeemFinished(true, mode, "");
+                 } else {
+                     QJsonObject e = QJsonDocument::fromJson(body).object();
+                     QString err = e["error"].toString();
+                     emit redeemFinished(false, QString(),
+                                         err.isEmpty() ? QString::number(status) : err);
                  }
              });
 }

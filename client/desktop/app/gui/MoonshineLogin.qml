@@ -57,6 +57,28 @@ Pane {
         }
 
         Label {
+            Layout.fillWidth: true
+            font.pointSize: 10
+            opacity: 0.7
+            horizontalAlignment: Text.AlignHCenter
+            text: qsTr("— ou entre com o código enviado pelo operador —")
+        }
+
+        TextField {
+            id: codeField
+            Layout.fillWidth: true
+            placeholderText: qsTr("Código de convite (XXXXX-XXXXX)")
+            onAccepted: MoonshineBackend.redeem(urlField.text.trim(), text.trim())
+        }
+
+        Button {
+            id: codeBtn
+            Layout.fillWidth: true
+            text: qsTr("Entrar com código")
+            onClicked: MoonshineBackend.redeem(urlField.text.trim(), codeField.text.trim())
+        }
+
+        Label {
             id: statusLabel
             Layout.fillWidth: true
             font.pointSize: 11
@@ -89,8 +111,22 @@ Pane {
                 statusLabel.text = qsTr("Conectado.")
                 playBtn.enabled = true
                 loginBtn.enabled = false
+                codeBtn.enabled = false
             } else {
                 statusLabel.text = qsTr("Falha no login: ") + error
+            }
+        }
+
+        function onRedeemFinished(ok, mode, error) {
+            if (ok) {
+                statusLabel.text = mode === "full"
+                    ? qsTr("Conectado · modo PC completo (você controla o desktop).")
+                    : qsTr("Conectado · modo jogo isolado.")
+                playBtn.enabled = true
+                loginBtn.enabled = false
+                codeBtn.enabled = false
+            } else {
+                statusLabel.text = qsTr("Código recusado: ") + error
             }
         }
 

@@ -231,11 +231,15 @@ async function startSession() {
   try {
     setPhase('connecting', 'Conectando ao PC…');
     const r = await call('/api/session/reserve', { method: 'POST' });
-    currentSession = { id: r.sessionId, state: r.state };
-    setPhase('preparing', 'Preparando seu ambiente isolado…');
+    currentSession = { id: r.sessionId, state: r.state, mode: r.mode };
+    setPhase(
+      'preparing',
+      r.mode === 'full' ? 'Preparando o PC completo…' : 'Preparando seu ambiente isolado…'
+    );
     const p = await call('/api/session/prepare', { method: 'POST', body: { sessionId: r.sessionId } });
     currentSession.state = p.state;
     currentSession.streamTarget = p.streamTarget;
+    currentSession.mode = p.mode;
     phase = 'idle';
     toast('Sessão pronta! Abra o Moonlight para jogar.', 'ok');
     await refreshClient();
@@ -257,16 +261,21 @@ function setPhase(p, msg) {
 function launchStream() {
   if (!currentSession?.streamTarget) return toast('Sessão sem alvo de streaming.', 'error');
   const host = currentSession.streamTarget.split(':')[0];
+  const full = currentSession.mode === 'full';
+  const step4 = full
+    ? '4. No Moonlight, abra o host e escolha o app <strong>Desktop</strong> — você controla o PC inteiro.'
+    : '4. Escolha o jogo que quer jogar e toque nele para iniciar o streaming.';
   render(`
     <div class="card">
       <h2>Streaming real via Moonlight</h2>
       <p class="sub">O vídeo, áudio e controles são transmitidos pelo <strong>Moonlight</strong> (projeto oficial), que conecta direto ao seu PC. O Moonshine reserva a sessão e libera o PC ao final.</p>
       <div class="kv" style="margin:14px 0">
+        <span class="k">Modo</span><span class="v" style="font-weight:700">${full ? 'PC completo (desktop do dono)' : 'Jogo isolado (sessão descartável)'}</span>
         <span class="k">Host Sunshine</span><span class="v" style="font-weight:700">${host}</span>
         <span class="k">Porta GameStream</span><span class="v">47984 / 47989</span>
       </div>
       <div class="kv" style="margin:6px 0 14px;padding:12px;border:1px solid var(--line);border-radius:12px">
-        <span class="k" style="line-height:1.5">Como jogar:<br>1. Abra o app <strong>Moonlight</strong>.<br>2. Adicione o host <strong>${host}</strong> (descoberta automática ou "Add computer" manual).<br>3. Se pedir PIN, use o pareador do painel admin.<br>4. Toque no host para iniciar o streaming.</span>
+        <span class="k" style="line-height:1.5">Como jogar:<br>1. Abra o app <strong>Moonlight</strong>.<br>2. Adicione o host <strong>${host}</strong> (descoberta automática ou "Add computer" manual).<br>3. Se pedir PIN, use o pareador do painel admin (nos apps Moonshine isso é automático).<br>${step4}</span>
       </div>
       <button class="btn" id="copyHost">Copiar endereço do host</button>
       <button class="btn danger" id="endMl" style="margin-top:10px">Encerrar sessão</button>

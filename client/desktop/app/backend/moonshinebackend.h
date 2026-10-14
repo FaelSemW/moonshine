@@ -25,12 +25,20 @@ public:
     Q_INVOKABLE void login(const QString& baseUrl,
                            const QString& username,
                            const QString& password);
+    // Entra com CÓDIGO DE CONVITE (a credencial enviada pelo operador, sem senha).
+    // A resposta traz o modo concedido: "game" (sessão isolada) ou "full" (PC
+    // completo); fica exposto em grantedMode para a UI e o fluxo de streaming.
+    Q_INVOKABLE void redeem(const QString& baseUrl, const QString& code);
     Q_INVOKABLE void play();
     Q_INVOKABLE void endSession();
     Q_INVOKABLE void logout();
 
+    QString grantedMode() const { return m_grantedMode; }
+
 signals:
     void loginFinished(bool ok, const QString& error);
+    void redeemFinished(bool ok, const QString& mode, const QString& error);
+    void grantedModeChanged();
     void playFinished(bool ok, const QString& streamHost, int streamPort,
                       const QString& error);
     void statusChanged(const QString& text);
@@ -47,6 +55,7 @@ private:
     QNetworkAccessManager m_nam;
     QString m_baseUrl;
     QString m_token;
+    QString m_grantedMode = QStringLiteral("game");
     qint64 m_sessionId = 0;
     QTimer* m_heartbeat;
 };

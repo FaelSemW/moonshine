@@ -74,6 +74,34 @@ public final class HostApi {
         token = r.getString("token");
     }
 
+    /**
+     * POST /api/redeem — entra com um código de convite (sem senha). O código é a
+     * credencial enviada pelo operador. Guarda o token e devolve a resposta
+     * completa { token, user, mode } — o modo concedido é "game" (sessão isolada)
+     * ou "full" (PC completo).
+     */
+    public JSONObject redeem(String code) throws Exception {
+        JSONObject body = new JSONObject();
+        body.put("code", code);
+        JSONObject r = new JSONObject(post("/api/redeem", body));
+        token = r.getString("token");
+        return r;
+    }
+
+    /**
+     * POST /api/pair/pin — auto-pareamento: o PIN é GERADO por este lado (fluxo
+     * oficial do GameStream) e enviado ao HOST, que o repassa ao Sunshine. O
+     * jogador nunca digita o PIN.
+     */
+    public JSONObject submitPairPin(String pin, String deviceName) throws Exception {
+        JSONObject body = new JSONObject();
+        body.put("pin", pin);
+        if (deviceName != null && !deviceName.isEmpty()) {
+            body.put("name", deviceName);
+        }
+        return new JSONObject(post("/api/pair/pin", body));
+    }
+
     /** GET /api/state → { machine: { state, detail, sessionId, updatedAt }, ... } */
     public JSONObject state() throws Exception {
         return new JSONObject(get("/api/state"));

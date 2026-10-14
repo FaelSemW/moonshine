@@ -47,10 +47,10 @@ public class MainActivity extends Activity {
     private ExecutorService exec;
     private Handler main;
 
-    private EditText etUrl, etUser, etPass;
+    private EditText etUrl, etUser, etPass, etCode;
     private TextView tvStatus;
     private LinearLayout loginGroup, actionGroup;
-    private Button btnLogin, btnPlay, btnEnd, btnLogout;
+    private Button btnLogin, btnCode, btnPlay, btnEnd, btnLogout;
 
     private long sessionId = 0;
     private String streamHost;
@@ -146,6 +146,21 @@ public class MainActivity extends Activity {
             }
         });
 
+        TextView sep = new TextView(this);
+        sep.setText("— ou entre com o código enviado pelo operador —");
+        sep.setTextSize(12);
+        sep.setPadding(0, dp(14), 0, dp(2));
+        loginGroup.addView(sep);
+
+        etCode = addField(loginGroup, "Código de convite", "");
+        etCode.setAllCaps(false);
+        btnCode = addButton(loginGroup, "Entrar com código", new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                redeem();
+            }
+        });
+
         actionGroup = new LinearLayout(this);
         actionGroup.setOrientation(LinearLayout.VERTICAL);
         actionGroup.setVisibility(View.GONE);
@@ -236,6 +251,7 @@ public class MainActivity extends Activity {
                             .putString("url", url)
                             .putString("user", user)
                             .putString("token", api.getToken())
+                            .putString("mode", "game")
                             .apply();
                     runUi(new Runnable() {
                         @Override
@@ -257,6 +273,65 @@ public class MainActivity extends Activity {
                 }
             }
         });
+    }
+
+    /**
+     * Entrada por CÓDIGO DE CONVITE: o operador gera o código no painel e envia
+     * ao jogador. Não há senha de plataforma — o código É a credencial. A
+     * resposta traz o modo concedido (game/full), que fica no SharedPreferences.
+     */
+    private void redeem() {
+        final String url = etUrl.getText().toString().trim();
+        final String code = etCode.getText().toString().trim();
+        if (url.isEmpty() || code.isEmpty()) {
+            toast("Preencha o endereço do HOST e o código de convite.");
+            return;
+        }
+        api.setBaseUrl(url);
+        btnLogin.setEnabled(false);
+        btnCode.setEnabled(false);
+        status("Resgatando código...");
+        exec.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final JSONObject r = api.redeem(code);
+                    final String mode = r.optString("mode", "game");
+                    JSONObject u = r.optJSONObject("user");
+                    final String who = u != null ? u.optString("username", "") : "";
+                    prefs.edit()
+                            .putString("url", url)
+                            .putString("user", who)
+                            .putString("token", api.getToken())
+                            .putString("mode", mode)
+                            .apply();
+                    runUi(new Runnable() {
+                        @Override
+                        public void run() {
+                            btnLogin.setEnabled(true);
+                            btnCode.setEnabled(true);
+                            setLoggedIn(true);
+                            status("Conectado como " + who + " · " + modeLabel(mode));
+                            refreshState();
+                        }
+                    });
+                } catch (final Exception e) {
+                    runUi(new Runnable() {
+                        @Override
+                        public void run() {
+                            btnLogin.setEnabled(true);
+                            btnCode.setEnabled(true);
+                            status("Código recusado: " + msg(e));
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    /** Rótulo humano do modo concedido pelo convite. */
+    private String modeLabel(String mode) {
+        return "full".equals(mode) ? "modo PC completo" : "modo jogo isolado";
     }
 
     private void refreshState() {
@@ -378,7 +453,7 @@ public class MainActivity extends Activity {
                     }
                 }
                 api.logout();
-                prefs.edit().remove("token").apply();
+                prefs.edit().remove("token").remove("mode").apply();
                 runUi(new Runnable() {
                     @Override
                     public void run() {
@@ -395,7 +470,7 @@ public class MainActivity extends Activity {
         sessionId = 0;
         stopHeartbeat();
         api.setToken(null);
-        prefs.edit().remove("token").apply();
+        prefs.edit().remove("token").remove("mode").apply();
         unbindMoon();
         setLoggedIn(false);
     }
