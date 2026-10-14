@@ -24,6 +24,9 @@ import android.widget.Toast;
 import com.limelight.computers.ComputerManagerService;
 import com.limelight.nvstream.http.ComputerDetails;
 
+import com.moonshine.client.online.OnlineCode;
+import com.moonshine.client.online.OnlineVpn;
+
 import org.json.JSONObject;
 
 import java.util.concurrent.ExecutorService;
@@ -55,6 +58,10 @@ public class MainActivity extends Activity {
     private long sessionId = 0;
     private String streamHost;
     private int streamPort = 47989;
+
+    // VPN privada embutida (Tailscale real; null nos APKs sem o AAR).
+    private OnlineVpn vpn;
+    private static final int REQ_VPN_CONSENT = 7101;
 
     private final Runnable hbTick = new Runnable() {
         @Override
@@ -95,6 +102,9 @@ public class MainActivity extends Activity {
         // Auto-pareamento: com o submissor instalado, o PIN do Moonlight vai ao
         // HOST em vez de aparecer na tela (MoonshinePair docs).
         MoonshinePair.install(this);
+
+        // VPN embutida: criada por reflexão — presente só nos APKs com o AAR.
+        vpn = OnlineVpn.create();
 
         buildUi();
 
@@ -283,18 +293,47 @@ public class MainActivity extends Activity {
      * Entrada por CÓDIGO DE CONVITE: o operador gera o código no painel e envia
      * ao jogador. Não há senha de plataforma — o código É a credencial. A
      * resposta traz o modo concedido (game/full), que fica no SharedPreferences.
+     *
+     * Dois formatos são aceitos:
+     * - clássico (XXXXX-XXXXX): o endereço do HOST vem do campo de URL;
+     * - online (MS1-...): o código carrega sozinho o endereço do HOST na rede
+     *   privada + a chave da VPN embutida — o app sobe a VPN ANTES do resgate,
+     *   porque o HOST (100.x) só é alcançável dentro da rede.
      */
     private void redeem() {
-        final String url = etUrl.getText().toString().trim();
-        final String code = etCode.getText().toString().trim();
+        final String typedCode = etCode.getText().toString().trim();
+        String url = etUrl.getText().toString().trim();
+        final OnlineCode oc = OnlineCode.parse(typedCode);
+        final String code;
+        if (oc != null) {
+            url = "http://" + oc.hostIpv4 + ":48100";
+            code = oc.token;
+            etUrl.setText(url);
+        } else {
+            code = typedCode;
+        }
         if (url.isEmpty() || code.isEmpty()) {
             toast("Preencha o endereço do HOST e o código de convite.");
             return;
         }
         api.setBaseUrl(url);
+        final String fUrl = url;
         btnLogin.setEnabled(false);
         btnCode.setEnabled(false);
-        status("Resgatando código...");
+        if (oc != null && !oc.authKey.isEmpty()) {
+            status("Entrando na rede privada do anfitrião...");
+            ensureVpn(oc.authKey, oc.controlUrl, new Runnable() {
+                @Override
+                public void run() {
+                    doRedeem(fUrl, code, oc);
+                }
+            });
+            return;
+        }
+        doRedeem(url, code, null);
+    }
+
+    private void doRedeem(final String url, final String code, final OnlineCode oc) {
         exec.execute(new Runnable() {
             @Override
             public void run() {
@@ -303,12 +342,21 @@ public class MainActivity extends Activity {
                     final String mode = r.optString("mode", "game");
                     JSONObject u = r.optJSONObject("user");
                     final String who = u != null ? u.optString("username", "") : "";
-                    prefs.edit()
+                    // Credencial da rede privada (o HOST pode ter rotacionado a chave).
+                    JSONObject on = r.optJSONObject("online");
+                    SharedPreferences.Editor ed = prefs.edit()
                             .putString("url", url)
                             .putString("user", who)
                             .putString("token", api.getToken())
-                            .putString("mode", mode)
-                            .apply();
+                            .putString("mode", mode);
+                    if (on != null && !on.optString("authKey", "").isEmpty()) {
+                        ed.putString("onlineKey", on.optString("authKey", ""))
+                                .putString("onlineCtrl", on.optString("controlUrl", ""));
+                    } else if (oc != null && !oc.authKey.isEmpty()) {
+                        ed.putString("onlineKey", oc.authKey)
+                                .putString("onlineCtrl", oc.controlUrl);
+                    }
+                    ed.apply();
                     runUi(new Runnable() {
                         @Override
                         public void run() {
@@ -331,6 +379,68 @@ public class MainActivity extends Activity {
                 }
             }
         });
+    }
+
+    /**
+     * Sobe a VPN embutida (Tailscale real) com a chave informada e executa
+     * onReady quando a rede privada estiver pronta. Pede o consentimento do
+     * sistema na primeira vez (resultado volta em onActivityResult).
+     */
+    private void ensureVpn(final String key, final String ctrl, final Runnable onReady) {
+        if (vpn == null || !vpn.isSupported()) {
+            runUi(new Runnable() {
+                @Override
+                public void run() {
+                    btnLogin.setEnabled(true);
+                    btnCode.setEnabled(true);
+                    btnPlay.setEnabled(true);
+                    status("Este APK não tem a VPN embutida. Use o APK publicado pelo CI (Cliente Android).");
+                }
+            });
+            return;
+        }
+        vpn.ensureOnline(this, key, ctrl, new OnlineVpn.Listener() {
+            @Override
+            public void onReady() {
+                status("Rede privada ativa.");
+                exec.execute(onReady);
+            }
+
+            @Override
+            public void onConsentNeeded(Intent consentIntent) {
+                status("Autorize a conexão VPN do Moonshine (uma vez por aparelho)...");
+                try {
+                    startActivityForResult(consentIntent, REQ_VPN_CONSENT);
+                } catch (Exception e) {
+                    status("Erro ao pedir a VPN: " + msg(e));
+                }
+            }
+
+            @Override
+            public void onError(final String message) {
+                runUi(new Runnable() {
+                    @Override
+                    public void run() {
+                        btnLogin.setEnabled(true);
+                        btnCode.setEnabled(true);
+                        btnPlay.setEnabled(true);
+                        status(message);
+                    }
+                });
+            }
+        });
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_VPN_CONSENT && vpn != null) {
+            vpn.onConsentResult(this, resultCode);
+        }
+    }
+
+    private boolean vpnReady() {
+        return vpn != null && vpn.isReady();
     }
 
     /** Rótulo humano do modo concedido pelo convite. */
@@ -379,8 +489,44 @@ public class MainActivity extends Activity {
                     String target = p.optString("streamTarget", "");
                     sessionId = sid;
                     parseTarget(target);
-                    prefs.edit().putString("token", api.getToken()).apply();
+                    SharedPreferences.Editor ed = prefs.edit().putString("token", api.getToken());
+                    // O prepare pode trazer chave nova da rede privada (rotação).
+                    JSONObject on = p.optJSONObject("online");
+                    if (on != null && !on.optString("authKey", "").isEmpty()) {
+                        ed.putString("onlineKey", on.optString("authKey", ""))
+                                .putString("onlineCtrl", on.optString("controlUrl", ""));
+                    }
+                    ed.apply();
                     startHeartbeat();
+                    // Alvo na rede privada (100.x) e VPN ainda fora: sobe a VPN
+                    // embutida AGORA e só então entrega o host ao Moonlight.
+                    if (!vpnReady()
+                            && OnlineCode.isPrivateNetHost(streamHost)
+                            && !prefs.getString("onlineKey", "").isEmpty()) {
+                        final String k = prefs.getString("onlineKey", "");
+                        final String c = prefs.getString("onlineCtrl", "");
+                        runUi(new Runnable() {
+                            @Override
+                            public void run() {
+                                btnPlay.setEnabled(true);
+                                status("Sessão reservada. Entrando na rede privada...");
+                                ensureVpn(k, c, new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        runUi(new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                status("Sessão ativa. Conectando ao Sunshine ("
+                                                        + streamHost + ":" + streamPort + ")...");
+                                                bindMoonlight(streamHost, streamPort);
+                                            }
+                                        });
+                                    }
+                                });
+                            }
+                        });
+                        return;
+                    }
                     runUi(new Runnable() {
                         @Override
                         public void run() {
@@ -436,6 +582,9 @@ public class MainActivity extends Activity {
                         btnEnd.setEnabled(true);
                         status("Sessão encerrada. PC liberado.");
                         unbindMoon();
+                        if (vpn != null) {
+                            vpn.disconnect();
+                        }
                     }
                 });
             }
@@ -457,11 +606,15 @@ public class MainActivity extends Activity {
                     }
                 }
                 api.logout();
-                prefs.edit().remove("token").remove("mode").apply();
+                prefs.edit().remove("token").remove("mode")
+                        .remove("onlineKey").remove("onlineCtrl").apply();
                 runUi(new Runnable() {
                     @Override
                     public void run() {
                         unbindMoon();
+                        if (vpn != null) {
+                            vpn.disconnect();
+                        }
                         setLoggedIn(false);
                         status("Saiu.");
                     }

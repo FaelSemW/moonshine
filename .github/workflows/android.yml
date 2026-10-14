@@ -41,6 +41,41 @@ jobs:
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           "$SDKMANAGER" "ndk;29.0.14206865"
 
+      # ---- VPN embutida: libtailscale.aar (Tailscale oficial, BSD-3) -------
+      # O APK embute o backend REAL do Tailscale compilado com gomobile a partir
+      # do repositório oficial tailscale/tailscale-android, em versão fixada.
+      - name: Fixar versão oficial do Tailscale (VPN embutida)
+        id: ts
+        run: echo "sha=264102cc702fbd844e900227ee02e5cbb4d7f801" >> "$GITHUB_OUTPUT"
+
+      - name: Restaurar libtailscale.aar (cache por versão fixada)
+        id: cache-ts
+        uses: actions/cache@v4
+        with:
+          path: client/android/app/libs/libtailscale.aar
+          key: libtailscale-aar-${{ runner.os }}-${{ steps.ts.outputs.sha }}
+
+      - name: Compilar libtailscale.aar (repo oficial + gomobile)
+        if: steps.cache-ts.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/tailscale/tailscale-android.git "$RUNNER_TEMP/ts-android"
+          cd "$RUNNER_TEMP/ts-android"
+          git checkout "${{ steps.ts.outputs.sha }}"
+          export TS_USE_TOOLCHAIN=1
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/29.0.14206865"
+          ./tool/go install golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gobind
+          export PATH="$(./tool/go env GOPATH)/bin:$PATH"
+          make libtailscale
+          mkdir -p "$GITHUB_WORKSPACE/client/android/app/libs"
+          cp android/libs/libtailscale.aar "$GITHUB_WORKSPACE/client/android/app/libs/libtailscale.aar"
+
+      - name: Verificar libtailscale.aar presente (VPN embutida)
+        run: |
+          set -e
+          test -f client/android/app/libs/libtailscale.aar
+          ls -l client/android/app/libs/libtailscale.aar
+
       - name: Compilar APK (nonRoot debug)
         working-directory: client/android
         run: |

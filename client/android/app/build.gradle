@@ -8,7 +8,9 @@ android {
     namespace 'com.limelight'
 
     defaultConfig {
-        minSdk 21
+        //26+ por causa da VPN embutida (libtailscale do Tailscale oficial
+        // é gerado com -androidapi 26; Android 8.0, 2017).
+        minSdk 26
         targetSdk 36
 
         // Moonshine: nosso próprio applicationId (pedido do próprio Moonlight em
@@ -29,9 +31,8 @@ android {
 
     productFlavors {
         root {
-            // Android O has native mouse capture, so don't show the rooted
-            // version to devices running O on the Play Store.
-            maxSdk 25
+            // O flavor root fica disponível em qualquer versão suportada (a
+            // restrição antiga a pré-O caiu junto com o minSdk 26 da VPN).
 
             externalNativeBuild {
                 ndkBuild {
@@ -142,6 +143,17 @@ android {
             excludes += '/META-INF/*.md'
         }
     }
+
+    // VPN embutida (Tailscale real): o AAR libtailscale.aar é gerado no CI a
+    // partir do repositório oficial tailscale/tailscale-android (BSD-3) e
+    // depositado em app/libs. Sem ele o app compila normalmente e o modo
+    // online fica indisponível — com aviso honesto na tela.
+    def tsAar = file("$projectDir/libs/libtailscale.aar")
+    if (tsAar.exists()) {
+        sourceSets {
+            main.java.srcDirs += 'src/online/java'
+        }
+    }
 }
 
 dependencies {
@@ -153,4 +165,9 @@ dependencies {
     implementation 'com.github.cgutman:ShieldControllerExtensions:1.0.1'
 
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+
+    def tsAarDep = file("$projectDir/libs/libtailscale.aar")
+    if (tsAarDep.exists()) {
+        implementation files(tsAarDep)
+    }
 }

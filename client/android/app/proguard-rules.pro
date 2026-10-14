@@ -4,6 +4,13 @@
 # Our code
 -keep class com.limelight.binding.input.evdev.* {*;}
 
+# Moonshine: VPN embutida (libtailscale oficial via gomobile — classes e seq runtime)
+-keep class libtailscale.** {*;}
+-keep class go.Seq {*;}
+-keep class go.SeqProxy {*;}
+-keep class go.SeqDispatcher {*;}
+-dontwarn go.**
+
 # Moonlight common
 -keep class com.limelight.nvstream.jni.* {*;}
 
