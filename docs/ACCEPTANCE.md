@@ -163,7 +163,9 @@ Procedimento para reproduzir: `npm test` e `npm start` nesta máquina.
       root) e Windows (instala o cliente oficial com verificação de assinatura
       + elevação única e dirige via CLI). O convite virou autossuficiente
       (código `MS1-` com endereço + chave) — fim do pega-eto chave↔VPN.
-      Compilação: CI (APK e executável); HOST coberto por teste.
+      Compilação **verde no CI**: APK `moonshine-client-android` (com AAR
+      embutido) e executável `moonshine-client-windows-x64`; HOST coberto por
+      teste (48).
 - [ ] **VPN embutida — validação em hardware**: com chave configurada, entrar
       com código `MS1-` em aparelho Android e PC Windows EXTERNOS (só internet)
       e confirmar: consentimento/instalação → "Rede privada ativa" → resgate →

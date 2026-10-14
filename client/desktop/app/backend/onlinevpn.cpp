@@ -249,9 +249,11 @@ bool OnlineVpn::verifySignature(const QString& msiPath, QString* err)
            "manualmente em https://tailscale.com/download/windows");
 
     const QString script =
+        // Status como TEXTO: o enum do PowerShell serializa de um jeito por
+        // versão (Valid=0 e NotSigned=2 no 5.1) — texto não mente.
         QStringLiteral("Get-AuthenticodeSignature -FilePath '%1' | "
-                       "Select-Object Status,StatusMessage,"
-                       "@{n='Signer';e={$_.SignerCertificate.Subject}} | "
+                       "Select-Object @{n='Status';e={$_.Status.ToString()}},"
+                       "StatusMessage,@{n='Signer';e={$_.SignerCertificate.Subject}} | "
                        "ConvertTo-Json -Compress")
             .arg(msiPath);
     const ProcResult r = run(QStringLiteral("powershell.exe"),
@@ -265,9 +267,9 @@ bool OnlineVpn::verifySignature(const QString& msiPath, QString* err)
 
     const QJsonObject o = QJsonDocument::fromJson(r.out.toUtf8()).object();
     const QJsonValue status = o["Status"];
-    // O PowerShell pode devolver o enum como número (2) ou como texto.
-    const bool valid = (status.isDouble() && status.toInt(-1) == 2) ||
-                       status.toString().compare(QStringLiteral("Valid"), Qt::CaseInsensitive) == 0;
+    // Só "Valid" passa; o 0 é o Valid numérico do PowerShell (redundância).
+    const bool valid = status.toString().compare(QStringLiteral("Valid"), Qt::CaseInsensitive) == 0 ||
+                       (status.isDouble() && status.toInt(-1) == 0);
     const QString signer = o["Signer"].toString();
     if (!valid || !signer.contains(QStringLiteral("Tailscale"), Qt::CaseInsensitive)) {
         *err = aviso;
