@@ -1,0 +1,57 @@
+name: Cliente Desktop
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/desktop/**'
+      - '.github/workflows/desktop.yml'
+  pull_request:
+    paths:
+      - 'client/desktop/**'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Compilar app Windows (Moonshine + Moonlight embutido)
+    runs-on: windows-2025
+    env:
+      CI_VERSION: 0.1.0
+
+    steps:
+      - name: Checkout com submodules (recursive)
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Baixar dependências pré-compiladas (Windows)
+        working-directory: client/desktop
+        run: powershell ./setup-deps.ps1
+
+      - name: Instalar Qt 6.12.0
+        uses: jurplel/install-qt-action@v4
+        with:
+          cache: true
+          set-env: false
+          add-tools-to-path: false
+          tools: tools_qtcreator_gui
+          version: 6.12.0
+          aqtsource: 'git+https://github.com/miurahr/aqtinstall.git@073e34d7c2ab4ae6961ed7cca690b3abd5ba5a7e'
+
+      - name: Compilar x64 (Release)
+        working-directory: client/desktop
+        shell: cmd
+        run: |
+          set "PATH=%QT_PATH%;%PATH%"
+          scripts\build-arch.bat Release x64
+        env:
+          QT_PATH: ${{ runner.workspace }}\Qt\6.12.0\msvc2022_64\bin
+
+      - name: Publicar app desktop (portátil)
+        uses: actions/upload-artifact@v4
+        with:
+          name: moonshine-client-windows-x64
+          path: client/desktop/build/deploy-x64-release/*
+          if-no-files-found: error
