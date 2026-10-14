@@ -39,12 +39,15 @@ exatos estão registrados abaixo para rastreabilidade.
   controle do Moonshine (login → reserva → sessão) e o streaming real do
   Moonlight. Não simulamos vídeo/áudio/controles. O **HOST** continua usando o
   Sunshine como Flatpak externo (não incorpora Sunshine). O cliente
-  **Windows/Linux** seguirá o mesmo padrão, incorporando o moonlight-qt.
-- Obrigações: incorporar moonlight-android/moonlight-common-c torna o app
-  derivado **GPL-3**. Cumprimos publicando o **código-fonte integral** neste
-  mesmo repositório público: o código do moonlight-android embarcado está
-  versionado em `client/android/app/src/main/`, e o `moonlight-common-c` é um
-  submódulo fixado no SHA público acima. O `applicationId` foi trocado para
+  **Windows/Linux** (`client/desktop/`) também **embuti** o Moonlight, desta vez
+  via fork do **moonlight-qt** (Qt/QML + moonlight-common-c), gerando um app
+  portátil.
+- Obrigações: incorporar moonlight-android/moonlight-common-c (Android) e
+  moonlight-qt (desktop) torna os apps derivados **GPL-3**. Cumprimos publicando
+  o **código-fonte integral** neste mesmo repositório público: o código
+  moonlight-android está versionado em `client/android/app/src/main/`, o
+  moonlight-qt em `client/desktop/`, e o `moonlight-common-c` é um submódulo
+  fixado no SHA público acima. O `applicationId` do Android foi trocado para
   `com.moonshine.client` (pedido explícito dos mantenedores do Moonlight).
 
 ## Licença deste projeto
@@ -60,10 +63,10 @@ redistribuição conjunta, quando necessária.
 | HOST usa Sunshine como Flatpak externo | Não |
 | Redistribuir binário Sunshine junto do seu produto | Sim (GPL-3 do Sunshine) |
 | Cliente Android embute moonlight-android/common-c | Sim — publicado aqui (GPL-3) |
+| Cliente Windows embute moonlight-qt | Sim — publicado aqui (GPL-3) |
 | Serviço de controle Moonshine (nosso código) | Sim (publicado como GPL-3) |
 
-> Nota honesta: o cliente Android **já incorpora** moonlight-android e
-> moonlight-common-c; por isso é um derivado GPL-3 e o código-fonte integral é
-> oferecido neste repositório público. O HOST **não** incorpora Sunshine (usa o
-> Flatpak externo). O cliente Windows/Linux incorporará moonlight-qt sob a mesma
-> obrigação de publicar o código-fonte.
+> Nota honesta: os clientes Android **e** Windows já incorporam, respectivamente,
+> moonlight-android/moonlight-common-c e moonlight-qt; por isso são derivados
+> GPL-3 e o código-fonte integral é oferecido neste repositório público. O HOST
+> **não** incorpora Sunshine (usa o Flatpak externo).

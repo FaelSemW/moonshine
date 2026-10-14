@@ -41,6 +41,18 @@ GitHub Actions:
 - `./gradlew assembleNonRootDebug` → **verde**.
 - Artefato `moonshine-client-android` (APK, **16,4 MB**) publicado.
 
+### Cliente Desktop Windows — compila para pacote portátil (CI, 2026-10-14)
+
+O cliente Windows (`client/desktop/`) é um **fork do moonlight-qt** com a tela
+de controle do Moonshine à frente. O workflow **Cliente Desktop** compilou com
+sucesso no GitHub Actions (mesma receita do upstream):
+
+- `windows-2025` + Qt `6.12.0` + `setup-deps.ps1` (deps pré-compiladas).
+- `scripts/build-arch.bat Release x64` → **verde** (compilação nativa +
+  `windeployqt`; etapa MSI/WiX removida do fork).
+- Artefato `moonshine-client-windows-x64` (pasta portátil, **37,3 MB**)
+  publicado.
+
 ## O que JÁ foi validado neste ambiente (evidências)
 
 - [x] HOST Node.js inicia e responde (`/api/health`, `/api/setup-required`).
@@ -90,8 +102,12 @@ Procedimento para reproduzir: `npm test` e `npm start` nesta máquina.
 - [ ] Android (hardware): instalar o APK num aparelho real, autenticar no HOST,
       reservar, parear (PIN do Sunshine na 1ª vez) e confirmar o streaming real.
       Procedimento: ver `docs/ANDROID.md`.
-- [ ] Windows/Linux: (planejado) app de desktop embutindo o moonlight-qt, no
-      mesmo padrão do Android. Até lá, usa-se a PWA no navegador + Moonlight-Qt.
+- [x] Windows: app desktop compila no CI (fork do moonlight-qt + tela Moonshine,
+      x64, sem WiX). Artefato `moonshine-client-windows-x64` (37,3 MB).
+- [ ] Windows (hardware): instalar num PC Windows real, autenticar, reservar,
+      parear e confirmar o streaming real. Procedimento: ver `docs/DESKTOP.md`.
+- [ ] Linux: mesmo código do cliente desktop; empacotar (.AppImage/.deb) e
+      validar em distro real.
 
 ## Como cada pendência será confirmada
 
