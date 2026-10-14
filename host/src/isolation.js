@@ -155,16 +155,18 @@ export async function ensureDedicatedUser(prefix, home) {
   try {
     const viaHelper = await runHelper('add', [name, home]);
     if (!viaHelper) {
-      await run('useradd', [
-        '--create-home',
-        '--home-dir',
-        home,
-        '--shell',
-        '/usr/sbin/nologin',
-        '--groups',
-        'games',
-        name,
-      ]);
+      // Sem --create-home: o chamador já criou o HOME com 0700; aqui só
+      // registramos o caminho em /etc/passwd (o chown -R adota o diretório).
+      // Grupo `games` é opcional (nem toda distro o tem).
+      const args = ['--home-dir', home, '--shell', '/usr/sbin/nologin'];
+      try {
+        await run('getent', ['group', 'games']);
+        args.push('--groups', 'games');
+      } catch {
+        /* sem grupo games — segue sem */
+      }
+      args.push(name);
+      await run('useradd', args);
     }
     return { user: name, created: true };
   } catch (e) {
@@ -220,8 +222,9 @@ export async function createSessionEnvironment(sessionId) {
     const home = resolve(runtimeDir, 'home');
     try {
       assertInside(runtimeDir, home);
-      // Criamos com 0700 ANTES do useradd: ele preserva o modo do diretório
-      // já existente (com --create-home puro sairia 0755).
+      // HOME criado com 0700 ANTES do useradd: ele só registra o caminho em
+      // /etc/passwd (sem --create-home) e o chown -R adota o diretório
+      // preservando o modo 0700.
       mkdirSync(home, { recursive: true, mode: 0o700 });
       const { user } = await ensureDedicatedUser(undefined, home);
       unixUser = user;

@@ -152,11 +152,15 @@ test('ciclo real: cria sessão isolada e limpa tudo (Linux + sudo)', {
     assert.ok(env.home.includes('s777-'), 'HOME deve ficar sob o diretório da sessão');
 
     // Diretório e HOME pertencem à sessão (não ao serviço) e HOME é 0700.
+    // O stat do HOME exige sudo (0700, dono msplayer-*): justamente a prova
+    // de que o serviço comum não lê o HOME da sessão.
     const uid = Number((await execFileAsync('id', ['-u', env.unixUser])).stdout.trim());
     assert.notEqual(statSync(env.runtimeDir).uid, process.getuid());
     assert.equal(statSync(env.runtimeDir).uid, uid);
-    assert.equal(statSync(env.home).uid, uid);
-    assert.equal(statSync(env.home).mode & 0o777, 0o700);
+    const su = (await execFileAsync('sudo', ['-n', 'stat', '-c', '%u %a', env.home]))
+      .stdout.trim().split(' ');
+    assert.equal(Number(su[0]), uid, 'HOME pertence ao usuário da sessão');
+    assert.equal(su[1], '700', 'HOME com permissão 0700');
     assert.equal(env.isolated, true);
   } catch (e) {
     // Não deixa lixo nem usuário para trás em caso de falha no meio.

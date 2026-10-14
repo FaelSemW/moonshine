@@ -20,9 +20,9 @@ HOME descartável e a limpeza verificada. Ver "Limites honestos".
 
 Para cada sessão o HOST usa um **usuário Linux dedicado** (ex.: `msplayer-a1b2`):
 
-1. O usuário dedicado é criado com `useradd --create-home
-   --home-dir /var/tmp/moonshine-sessions/s<id>-<rand>/home
-   --shell /usr/sbin/nologin`. O `HOME` temporário vai direto para o
+1. O usuário dedicado é criado com `useradd --home-dir <HOME temporário>
+   --shell /usr/sbin/nologin`. O diretório do `HOME` é **criado pelo HOST com
+   `0700` antes** e adotado pelo `chown -R`; o caminho vai para o
    `/etc/passwd` do usuário — nada é criado em `/home`.
 2. O `HOME` desse usuário é um diretório temporário sob
    `/var/tmp/moonshine-sessions/s<id>-<rand>`, com permissões `0700`, e todo o

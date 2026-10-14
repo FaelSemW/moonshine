@@ -48,11 +48,18 @@ case "$op" in
       exit 0   # já existe — idempotente
     fi
     command -v useradd >/dev/null 2>&1 || die "useradd ausente neste sistema"
+    # Sem --create-home: o HOST cria o HOME com 0700 antes (e adota via
+    # chown); o useradd só registra o caminho em /etc/passwd. Evita o caso
+    # variável "home já existe" de versões diferentes do shadow.
+    # O grupo `games` é opcional (nem toda distro o tem).
+    extra=()
+    if command -v getent >/dev/null 2>&1 && getent group games >/dev/null 2>&1; then
+      extra=(--groups games)
+    fi
     exec "$(command -v useradd)" \
-      --create-home \
       --home-dir "$home" \
       --shell /usr/sbin/nologin \
-      --groups games \
+      "${extra[@]}" \
       "$name"
     ;;
 
