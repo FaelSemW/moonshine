@@ -3,6 +3,24 @@
 Data da primeira versão: 2026-10-12
 Ambiente de desenvolvimento: Windows 11, Node.js 22.23.3, sem Python/Java/CMake/GPU.
 
+> **Atualização 2026-10-14 — o corpo abaixo é o relato da primeira versão.**
+> Mudanças posteriores (estado vigente em `README.md`/`ACCEPTANCE.md`/`SECURITY.md`):
+> - **Códigos de convite** como credencial do jogador e **dois modos de sessão**
+>   (`game` isolado / `full` PC completo), com modo vindo do token.
+> - **Auto-pareamento**: o PIN é gerado no app e repassado ao Sunshine pela API
+>   oficial (`POST /api/pair/pin`); sem sessão Moonshine, vale o PIN manual.
+> - **Clientes Android e Windows com Moonlight EMBUTIDO** (forks compilados na
+>   CI do GitHub Actions, artefatos publicados) — o item "cliente externo" da
+>   seção 4 e o deep-link `moonlight://` (não existe no Moonlight oficial)
+>   estão **superados**.
+> - **Porta do HOST = 48100** (47990 é a Web UI do Sunshine).
+> - **Helper de privilégio** `deploy/bazzite/moonshine-helper.sh` + sudoers
+>   restrito (instalação com um único sudo, opcional): useradd/userdel/chown/
+>   pkill do modo `game` funcionam sob `systemd --user`; ciclo real coberto por
+>   teste na CI Linux. Limitação honesta de runtime (jogo ainda roda na conta do
+>   dono até a fase 2) em `SECURITY.md`.
+> - **39 testes** automatizados (`npm test`).
+
 ## 1. O que foi implementado (funcional e testado)
 
 ### HOST (Node.js, sem dependências externas) — `host/src/`
