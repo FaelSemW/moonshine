@@ -33,13 +33,35 @@ Requer Node.js 22.5+ (testado com 22.23.3). Sem dependências npm externas.
 
 ```sh
 npm start        # sobe em http://127.0.0.1:48100
-npm test         # 29 testes automatizados
+npm test         # 35 testes automatizados
 npm run check    # verificação de sintaxe
 ```
 
 Abra `http://127.0.0.1:48100`, crie o administrador na primeira tela e use o
 painel. Em Windows/macOS o HOST opera em modo de desenvolvimento (isolamento de
 SO desativado); ele **não** finge streaming.
+
+## Acesso dos jogadores (convite + dois modos)
+
+O administrador gera um **código de convite** na aba **Convites** e envia ao
+jogador. O código **é** a credencial — não há senha de plataforma. Cada código
+carrega o modo da sessão:
+
+- **game** (recomendado): sessão isolada — usuário Linux dedicado, HOME
+  temporário descartável, biblioteca somente leitura, remoção verificada ao
+  final (bloqueio se falhar).
+- **full**: PC completo — o jogador passa a controlar o **desktop do dono**
+  (o dono escolheu abrir a máquina; sem isolamento). Nos apps, o Moonlight
+  entra no app **Desktop** do Sunshine.
+
+O painel lista os códigos emitidos (modo, usos, validade, status) e permite
+**copiar** ou **revogar**. Nos **apps Android/Windows** o pareamento com o
+Sunshine é **automático**: o PIN é gerado pelo próprio app e entregue ao HOST,
+que o repassa à API oficial do Sunshine — ninguém digita PIN. Os apps aceitam
+também login por usuário/senha (sempre modo `game`).
+
+No PC do dono, o **modo online** é via **Tailscale** (nada na internet pública):
+assistente do painel → passo 3 aponta painel e Sunshine ao IP Tailscale.
 
 ### CLI de diagnóstico e configuração
 

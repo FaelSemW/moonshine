@@ -76,6 +76,27 @@ arriscar vazar dados entre jogadores.
   resposta. Corpo limitado a 64 KB.
 - Máquina impede **sessão simultânea**: reserva atômica, um jogador por vez.
 
+## Acesso por código de convite e modos de sessão
+
+- O administrador gera **códigos de convite** no painel (aba **Convites**):
+  10 símbolos em base32 de Crockford (`XXXXX-XXXXX`, 50 bits de entropia), com
+  validade opcional, limite de usos e **modo**. Revogar (ou esgotar/expirar)
+  corta o acesso.
+- **O código É a credencial** do jogador — não existe senha de plataforma para
+  quem entra por convite. O resgate (`POST /api/redeem`) tem **rate limit por
+  IP** (20 tentativas/min) e só aceita código ativo, não expirado e não
+  esgotado; o consumo do uso é atômico (dois resgates simultâneos não estouram
+  o limite).
+- O **modo da sessão vem do token**, nunca de input livre do cliente:
+  - `game` — sessão isolada (seção acima). Todo login por senha é `game`.
+  - `full` — PC completo: o dono deliberadamente abre o desktop real **sem**
+    isolamento. Só obtível por convite emitido como `full`.
+- **Auto-pareamento:** o PIN do pareamento GameStream é **gerado pelo cliente**
+  (nossos apps Android/Windows) e entregue ao HOST (`POST /api/pair/pin`,
+  autenticado, rate limit 10/min por IP), que o repassa à API oficial do
+  Sunshine (`POST /api/pin`). O jogador não digita nem vê o PIN nos apps. Sem
+  sessão Moonshine o fluxo volta ao oficial (PIN exibido/digitação no painel).
+
 ## Credenciais do Sunshine
 
 O HOST pode guardar, **em memória de processo**, as credenciais da Web UI do

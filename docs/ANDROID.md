@@ -12,14 +12,29 @@ embutido.
 
 ## Fluxo do jogador
 
-1. Abre o app, informa o **endereço do HOST** (ex.: `http://192.168.0.10:48100`,
+1. Abre o app e informa o **endereço do HOST** (ex.: `http://192.168.0.10:48100`,
    ou o IP Tailscale para jogar fora de casa).
-2. **Entrar** com o usuário/senha de jogador (criados no painel do HOST).
-3. **Jogar (reservar sessão)** — reserva e prepara a sessão no HOST.
-4. Na **1ª vez**, o Moonlight pede para **parear**: um PIN aparece e você digita
-   no Sunshine (painel do HOST → Sunshine). Depois, escolhe o host e inicia o
-   stream.
+2. **Entrar com código**: cola o **código de convite** gerado no painel do HOST
+   (aba Convites) — sem senha. (Alternativa: usuário/senha de jogador; esse
+   caminho é sempre modo `game` isolado.)
+3. **Jogar (reservar sessão)** — reserva e prepara a sessão no HOST; o modo do
+   convite (`game` isolado ou `full` PC completo) aparece no status.
+4. Na **1ª vez**, o Moonlight **pareia sozinho**: o PIN é gerado pelo próprio
+   app e entregue ao HOST (auto-pair) — **não há PIN para digitar**. Depois,
+   escolhe o jogo (ou o app **Desktop**, no modo `full`) e inicia o stream.
 5. **Encerrar sessão** libera o PC. Só **um jogador por vez**.
+
+## O que mudamos em relação ao upstream (moonlight-android)
+
+- `com/moonshine/client/` — tela de controle (`MainActivity`), API do HOST
+  (`HostApi`: login/resgate de código/reserva/heartbeat) e auto-pareamento
+  (`MoonshinePair`).
+- `com/limelight/PcView.java` — omita o diálogo do PIN quando há sessão
+  Moonshine (fluxo automático) e mensagem própria de falha auto.
+- `com/limelight/nvstream/http/PairingManager.java` — submissor de PIN: a
+  costura é chamada **entre** `getservercert` e `clientchallenge` (mesma ordem
+  do fluxo manual, sem corrida); sem submissor, o comportamento é o oficial.
+- `MainActivity` lança o `PcView` do MESMO APK; nada de app externo.
 
 ## Compilar
 

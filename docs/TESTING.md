@@ -59,32 +59,46 @@ O serviço já está no ar. Abra `http://127.0.0.1:48100` (ou o endereço Tailsc
 
 Depois entre e confira, na aba **Sunshine**, que "Alcançável" está **sim**.
 
-## Etapa 5 — Criar um jogador
+## Etapa 5 — Gerar um código de convite
 
-Painel → aba **Jogadores** → adicione (ex.: `jogador1` / senha de 8+ caracteres).
+Painel → aba **Convites** → escolha o **modo** (`game` = sessão isolada ou
+`full` = PC completo), usos e validade → **Gerar código** → **Copiar código**.
 
-Ou pela CLI (com o serviço parado ou rodando):
+**Esperado:** aparece um código `XXXXX-XXXXX` na lista, com status **ativo**, e
+um jogador `jogador-xxxxxx` é criado automaticamente (ou vincule o código a um
+jogador existente).
+
+Também dá para criar um jogador manualmente (aba **Jogadores** ou CLI):
 
 ```bash
 node ~/moonshine/host/src/cli.js create-user jogador1 sua-senha-8
 ```
 
-## Etapa 6 — Parear o Moonlight com o Sunshine
+## Etapa 6 — Parear (automático nos apps Moonshine)
 
-1. No celular/desktop, instale o **Moonlight** (Google Play / flathub / site).
-2. Abra o Moonlight e **adicione o host** pelo endereço GameStream do Bazzite
-   (descoberta automática na mesma rede, ou "Add computer" com o IP).
-3. O Moonlight mostra um **PIN**. No painel Moonshine → aba **Sunshine** →
+**Com os apps Moonshine** (Android/Windows — baixe os artefatos do CI):
+
+1. Abra o app, informe o endereço do HOST (ex.: `http://<ip-do-bazzite>:48100`)
+   e entre com o **código de convite**.
+2. Na primeira vez, o app adiciona o host e **pareia sozinho**: o PIN é gerado
+   pelo próprio app e entregue ao HOST — **você não digita nada**.
+
+**Esperado:** pareamento concluído e o host aparece pareado, sem diálogo de PIN.
+
+**Com o Moonlight oficial** (fluxo manual, continua disponível):
+
+1. Instale o **Moonlight** (Google Play / flathub / site) e adicione o host
+   (descoberta automática ou "Add computer" com o IP).
+2. O Moonlight mostra um **PIN**; no painel Moonshine → aba **Sunshine** →
    **Pareamento** → digite o PIN → **Enviar**.
-
-**Esperado:** "Pareamento concluído" e o cliente aparece como pareado.
 
 ## Etapa 7 — Jogar (streaming real)
 
-1. No Moonlight (cliente), entre com `jogador1` / senha no painel Moonshine.
+1. No app Moonshine, entre com o **código de convite** (ou com usuário/senha de
+   jogador — esse caminho é sempre modo `game`).
 2. Veja o PC **disponível** → toque **Iniciar sessão**.
-3. O painel reserva, prepara e mostra o **endereço do host** para abrir no
-   Moonlight. Copie o endereço, abra o Moonlight e inicie o streaming.
+3. O app reserva, prepara e abre o streaming (o app embute o Moonlight). Na
+   **web/PWA**, o painel mostra o endereço do host para abrir no Moonlight.
 4. **Esperado:** a tela do Bazzite aparece no dispositivo. Abra a Steam com a
    **sua conta** (o Moonshine não toca credenciais da Steam) e jogue.
 
@@ -110,6 +124,33 @@ Com uma sessão ativa, tente reservar de outro dispositivo/usuário.
 
 Se uma limpeza falhar, o painel mostra **Bloqueado** e recusa novas sessões até
 você usar **Liberar máquina** (aba Estado) ou `node host/src/cli.js unlock`.
+
+## Etapa 11 — Modo PC completo (convite `full`)
+
+1. **Convites** → modo **PC completo** → gerar → copiar.
+2. Entre no app/web com esse código → **Iniciar sessão** → no Moonlight, escolha
+   o app **Desktop**.
+
+**Esperado:** o jogador vê e controla o **desktop do dono** (teclado/mouse e
+arquivos reais), sem ambiente isolado — é a escolha deliberada do dono para
+esse código. Confira na aba **Registros** o evento "modo PC completo".
+
+Depois teste o revogar: **Convites** → **Revogar** → novo resgate do mesmo
+código é recusado (401).
+
+## Etapa 12 — Online para um amigo (Tailscale, sem internet pública)
+
+1. Painel → aba **Configuração** → passo **3 · Rede para amigos (Tailscale)** →
+   **Expor painel no IP Tailscale** (isso aponta painel **e Sunshine** ao IP
+   100.x do Bazzite) → reinicie o serviço.
+2. No terminal do Bazzite: `tailscale serve --bg --https=443 http://127.0.0.1:48100`
+3. Convide o amigo para a sua rede Tailscale; ele instala o Tailscale no
+   celular/PC dele.
+4. No app dele: endereço `http://<ip-tailscale-do-bazzite>:48100` → **Entrar com
+   código** → colar o convite → jogar.
+
+**Esperado:** streaming funciona de fora da sua rede; nada ficou exposto à
+internet pública (verifique em `tailscale status` que só a sua rede acessa).
 
 ---
 

@@ -403,12 +403,15 @@ async function renderAdminSetup(body) {
       ${!ts.installed ? `<p class="sub" style="margin:10px 0 4px">Instale (Bazzite):</p><code style="display:block;background:var(--bg);padding:10px;border-radius:8px;font-size:12px">flatpak install -y flathub com.tailscale.tailscale</code>` : ''}
       ${ts.running && ts.ip && net.bindHost === '127.0.0.1' ? `
         <button class="btn" id="bindTs" style="margin-top:14px">Expor painel no IP Tailscale (${ts.ip})</button>` : ''}
-      ${ts.running ? `<p class="sub" style="margin:12px 0 0">Depois, no terminal do Bazzite, termine o HTTPS:</p><code style="display:block;background:var(--bg);padding:10px;border-radius:8px;font-size:12px">tailscale serve --bg --https=443 http://127.0.0.1:${net.port}</code><p class="sub" style="margin:6px 0 0">Amigos instalam Tailscale e você os convida. Depois abrem <strong>https://${ts.ip}</strong> e entram com o jogador criado em "Jogadores".</p>` : ''}`)}
+      ${ts.running ? `<p class="sub" style="margin:12px 0 0">Depois, no terminal do Bazzite, termine o HTTPS:</p><code style="display:block;background:var(--bg);padding:10px;border-radius:8px;font-size:12px">tailscale serve --bg --https=443 http://127.0.0.1:${net.port}</code><p class="sub" style="margin:6px 0 0">Amigos instalam Tailscale e você os convida. Depois abrem <strong>https://${ts.ip}</strong> (painel) — e no app Moonshine informam <strong>http://${ts.ip}:${net.port}</strong> — entrando com o <strong>código de convite</strong> gerado em "Convites".</p>` : ''}`)}
 
     <div class="card">
-      <h2>4 · Amigos (convite)</h2>
-      <p class="sub" style="margin:0 0 8px">Cada amigo recebe: (a) um login de jogador (aba <strong>Jogadores</strong>), e (b) um convite do Tailscale. Eles abrem o endereço privado, entram e jogam pelo Moonlight. Só um jogador por vez.</p>
-      <button class="btn secondary" id="goUsers">Ir para Jogadores</button>
+      <h2>4 · Amigos (código de convite)</h2>
+      <p class="sub" style="margin:0 0 8px">Na aba <strong>Convites</strong>, gere um código por amigo e escolha o modo concedido: <strong>game</strong> (sessão isolada, sem seus arquivos) ou <strong>full</strong> (PC completo). Ele informa <code>${ts.ip ? `http://${ts.ip}:${net.port}` : 'o endereço do HOST'}</code> no app Moonshine e entra com o <strong>código</strong> — sem senha. Revogar o código corta o acesso. Só um jogador por vez.</p>
+      <div class="row">
+        <button class="btn" id="goInvites">Ir para Convites</button>
+        <button class="btn secondary" id="goUsers">Ir para Jogadores</button>
+      </div>
     </div>`;
 
   const b = (id, fn) => { const e = el(id); if (e) e.onclick = fn; };
@@ -422,9 +425,19 @@ async function renderAdminSetup(body) {
     toast(r.ok ? 'App Desktop garantido.' : 'Falha: ' + (r.error || ''), r.ok ? 'ok' : 'error');
   });
   b('bindTs', async () => {
-    await call('/api/admin/network', { method: 'POST', body: { bindHost: ts.ip } });
-    toast('Painel apontado para o Tailscale. Reinicie o serviço para aplicar.', 'ok');
+    // Além de expor o painel, aponta o Sunshine ao IP Tailscale: é de lá que sai
+    // o streamTarget entregue aos jogadores (sem isso viraria 127.0.0.1 — o PC
+    // do próprio jogador).
+    await call('/api/admin/network', {
+      method: 'POST',
+      body: { bindHost: ts.ip, sunshineAddress: `${ts.ip}:47989` },
+    });
+    toast('Painel e Sunshine apontados para o Tailscale. Reinicie o serviço para aplicar.', 'ok');
     renderAdminSetup(body);
+  });
+  b('goInvites', () => {
+    view.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x.dataset.t === 'invites'));
+    adminTab('invites');
   });
   b('goUsers', () => {
     view.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x.dataset.t === 'users'));

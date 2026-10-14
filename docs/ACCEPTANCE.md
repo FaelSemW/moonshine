@@ -27,7 +27,7 @@ dedicado dependem do hardware Bazzite (itens abaixo).
 ### Suíte automatizada
 
 - `npm run check` → sintaxe de todos os módulos OK.
-- `npm test` → **28/28 aprovados**.
+- `npm test` → **35/35 aprovados**.
 - CI GitHub Actions → verde (build + boot do HOST + shellcheck do instalador).
 
 ### Cliente Android — compila para APK (CI, 2026-10-14)
@@ -66,7 +66,19 @@ sucesso no GitHub Actions (mesma receita do upstream):
 - [x] Validação de caminho contra path traversal e symlink escape no descarte.
 - [x] Descarte remove o ambiente temporário; verificação pós-limpeza.
 - [x] Interface web serve corretamente e bloqueia traversal estático.
-- [x] 26 testes automatizados passando (`npm test`).
+- [x] **Códigos de convite** (credencial do jogador): geração Crockford base32
+      `XXXXX-XXXXX`, resgate com rate limit por IP, validade/usos/revogação e
+      modo carregado pelo token (nunca input livre do cliente).
+- [x] **Dois modos de sessão:** `game` (isolamento completo, padrão de todo
+      login por senha) e `full` (pula isolamento, registra evento de aviso).
+- [x] **Auto-pareamento:** `POST /api/pair/pin` valida PIN, autentica, escolhe
+      o pareamento pendente e repassa à API oficial do Sunshine (stub cobre
+      400/401/409/200).
+- [x] **Porta do HOST = 48100** (47990 é a Web UI do Sunshine; na mesma
+      máquina um dos dois falharia ao escutar).
+- [x] Painel: aba **Convites** (gerar/copiar/revogar) validado no navegador e
+      **login por código** no web client (fluxo real no navegador).
+- [x] 35 testes automatizados passando (`npm test`).
 
 Procedimento para reproduzir: `npm test` e `npm start` nesta máquina.
 
@@ -89,8 +101,10 @@ Procedimento para reproduzir: `npm test` e `npm start` nesta máquina.
 
 ## Pendente — Streaming real
 
-- [ ] Moonlight (Android ou desktop) pareado com o Sunshine do HOST.
-      Procedimento: Moonlight → adicionar host → PIN → confirmar pareamento.
+- [ ] Pareamento real com o Sunshine do HOST.
+      Procedimento: com os **apps Moonshine**, adicionar o host e confirmar que
+      o pareamento termina **sem digitar PIN** (auto-pair); com Moonlight
+      oficial, PIN manual pelo painel (aba Sunshine).
 - [ ] Streaming real de vídeo/áudio/controles iniciado após a reserva no Moonshine.
       Procedimento: reservar pelo Moonshine, abrir Moonlight, lançar, jogar.
 - [ ] Fim de sessão detectado quando o jogador sai do Moonlight → limpeza.
@@ -99,13 +113,14 @@ Procedimento para reproduzir: `npm test` e `npm start` nesta máquina.
 
 - [x] Android: APK compila no CI (Moonshine + Moonlight embutido,
       `applicationId com.moonshine.client`). Artefato `moonshine-client-android`.
-- [ ] Android (hardware): instalar o APK num aparelho real, autenticar no HOST,
-      reservar, parear (PIN do Sunshine na 1ª vez) e confirmar o streaming real.
-      Procedimento: ver `docs/ANDROID.md`.
+- [ ] Android (hardware): instalar o APK num aparelho real, entrar com **código
+      de convite**, reservar, parear (**automático, sem digitar PIN**) e
+      confirmar o streaming real. Procedimento: ver `docs/ANDROID.md`.
 - [x] Windows: app desktop compila no CI (fork do moonlight-qt + tela Moonshine,
       x64, sem WiX). Artefato `moonshine-client-windows-x64` (37,3 MB).
-- [ ] Windows (hardware): instalar num PC Windows real, autenticar, reservar,
-      parear e confirmar o streaming real. Procedimento: ver `docs/DESKTOP.md`.
+- [ ] Windows (hardware): instalar num PC Windows real, entrar com código,
+      reservar, parear (**automático, sem digitar PIN**) e confirmar o
+      streaming real. Procedimento: ver `docs/DESKTOP.md`.
 - [ ] Linux: mesmo código do cliente desktop; empacotar (.AppImage/.deb) e
       validar em distro real.
 
