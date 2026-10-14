@@ -33,12 +33,18 @@ public:
     Q_INVOKABLE void endSession();
     Q_INVOKABLE void logout();
 
+    // "true" enquanto há sessão Moonshine (token) — é o gatilho do pareamento
+    // automático: o PIN vai ao HOST em vez de aparecer em diálogo (auto-pair).
+    Q_PROPERTY(bool autoPair READ autoPair NOTIFY autoPairChanged)
+
     QString grantedMode() const { return m_grantedMode; }
+    bool autoPair() const { return !m_token.isEmpty(); }
 
 signals:
     void loginFinished(bool ok, const QString& error);
     void redeemFinished(bool ok, const QString& mode, const QString& error);
     void grantedModeChanged();
+    void autoPairChanged();
     void playFinished(bool ok, const QString& streamHost, int streamPort,
                       const QString& error);
     void statusChanged(const QString& text);

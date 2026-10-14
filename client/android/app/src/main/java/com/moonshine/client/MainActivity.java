@@ -92,6 +92,10 @@ public class MainActivity extends Activity {
         exec = Executors.newSingleThreadExecutor();
         main = new Handler(Looper.getMainLooper());
 
+        // Auto-pareamento: com o submissor instalado, o PIN do Moonlight vai ao
+        // HOST em vez de aparecer na tela (MoonshinePair docs).
+        MoonshinePair.install(this);
+
         buildUi();
 
         String token = prefs.getString("token", null);

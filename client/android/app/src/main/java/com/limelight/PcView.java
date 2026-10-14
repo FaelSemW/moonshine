@@ -424,10 +424,19 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
                     else {
                         final String pinStr = PairingManager.generatePinString();
 
-                        // Spin the dialog off in a thread because it blocks
-                        Dialog.displayDialog(PcView.this, getResources().getString(R.string.pair_pairing_title),
-                                getResources().getString(R.string.pair_pairing_msg)+" "+pinStr+"\n\n"+
-                                getResources().getString(R.string.pair_pairing_help), false);
+                        // Moonshine (fork): com sessão ativa, o PIN NÃO é exibido —
+                        // ele é entregue ao HOST dentro de PairingManager.pair()
+                        // (antes do clientchallenge). Sem sessão, mantém o fluxo
+                        // oficial: mostra o PIN para o usuário digitar no Sunshine.
+                        if (com.moonshine.client.MoonshinePair.isAutoEnabled(PcView.this)) {
+                            Toast.makeText(PcView.this, "Pareando automaticamente (sem digitar PIN)...",
+                                    Toast.LENGTH_SHORT).show();
+                        } else {
+                            // Spin the dialog off in a thread because it blocks
+                            Dialog.displayDialog(PcView.this, getResources().getString(R.string.pair_pairing_title),
+                                    getResources().getString(R.string.pair_pairing_msg)+" "+pinStr+"\n\n"+
+                                    getResources().getString(R.string.pair_pairing_help), false);
+                        }
 
                         PairingManager pm = httpConn.getPairingManager();
 
@@ -436,7 +445,11 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
                             message = getResources().getString(R.string.pair_incorrect_pin);
                         }
                         else if (pairState == PairState.FAILED) {
-                            if (computer.runningGameId != 0) {
+                            if (com.moonshine.client.MoonshinePair.isAutoEnabled(PcView.this)) {
+                                message = "Pareamento automático não concluído — confira se o Moonshine "
+                                        + "está conectado ao HOST e tente de novo.";
+                            }
+                            else if (computer.runningGameId != 0) {
                                 message = getResources().getString(R.string.pair_pc_ingame);
                             }
                             else {

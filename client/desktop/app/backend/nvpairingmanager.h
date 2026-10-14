@@ -24,6 +24,15 @@ public:
     PairState
     pair(QString appVersion, QString pin, QSslCertificate& serverCert);
 
+    // ---- Moonshine (fork): relay automático do PIN ---------------------------
+    //
+    // Com a URL/token do Moonshine definidos, pair() entrega o PIN ao plano de
+    // controle ENTRE o getservercert (que cria o pareamento pendente no
+    // Sunshine) e o clientchallenge (que exige o PIN já conhecido lá) — mesma
+    // ordem do fluxo manual, sem corrida e sem o jogador digitar nada. Sem relay
+    // (baseUrl/token vazios), o comportamento é 100% o oficial.
+    static void setMoonshineRelay(const QString& baseUrl, const QString& token);
+
 private:
     QByteArray
     generateRandomBytes(int length);

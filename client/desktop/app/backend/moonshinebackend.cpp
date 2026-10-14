@@ -1,5 +1,7 @@
 #include "moonshinebackend.h"
 
+#include "nvpairingmanager.h"
+
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
@@ -54,6 +56,10 @@ void MoonshineBackend::login(const QString& baseUrl,
                          m_grantedMode = QStringLiteral("game");
                          emit grantedModeChanged();
                      }
+                     // Auto-pair: com token, o NvPairingManager passa a entregar
+                     // o PIN ao HOST em vez de exibi-lo (nossa costura).
+                     NvPairingManager::setMoonshineRelay(m_baseUrl, m_token);
+                     emit autoPairChanged();
                      emit loginFinished(true, "");
                  } else {
                      QJsonObject e = QJsonDocument::fromJson(body).object();
@@ -86,6 +92,9 @@ void MoonshineBackend::redeem(const QString& baseUrl, const QString& code)
                      }
                      m_grantedMode = mode;
                      emit grantedModeChanged();
+                     // Auto-pair: mesma ligação do login (entrega de PIN ao HOST).
+                     NvPairingManager::setMoonshineRelay(m_baseUrl, m_token);
+                     emit autoPairChanged();
                      emit redeemFinished(true, mode, "");
                  } else {
                      QJsonObject e = QJsonDocument::fromJson(body).object();
@@ -176,6 +185,9 @@ void MoonshineBackend::logout()
         endSession();
     }
     m_token.clear();
+    // Sem sessão, o pareamento volta ao fluxo oficial (PIN exibido).
+    NvPairingManager::setMoonshineRelay(QString(), QString());
+    emit autoPairChanged();
 }
 
 void MoonshineBackend::postJson(const QString& path, const QByteArray& body, bool auth,

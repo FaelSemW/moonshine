@@ -238,9 +238,14 @@ CenteredGridView {
                     // Kick off pairing in the background
                     computerModel.pairComputer(index, pin)
 
-                    // Display the pairing dialog
-                    pairDialog.pin = pin
-                    pairDialog.open()
+                    // Moonshine: com sessão ativa (autoPair) o PIN NÃO é exibido —
+                    // ele é entregue ao HOST durante o pareamento (costura em
+                    // NvPairingManager). Sem sessão, mantém o diálogo oficial.
+                    if (!MoonshineBackend.autoPair) {
+                        // Display the pairing dialog
+                        pairDialog.pin = pin
+                        pairDialog.open()
+                    }
                 }
             } else if (!model.online) {
                 // Using open() here because it may be activated by keyboard

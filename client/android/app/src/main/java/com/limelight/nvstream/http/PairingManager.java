@@ -178,6 +178,35 @@ public class PairingManager {
                 r.nextInt(10), r.nextInt(10));
     }
 
+    // ---- Moonshine (fork): transporte automático do PIN ----------------------
+    //
+    // Nosso app embute este Moonlight e também controla o Sunshine via plano de
+    // controle. Com um submissor instalado, o PIN gerado é entregue ao HOST (que
+    // o repassa à API oficial POST /api/pin) em vez de ser exibido para o usuário
+    // digitar. A costura é chamada DENTRO de pair(), entre getservercert (que
+    // cria o pareamento pendente no servidor) e o clientchallenge (que exige o
+    // PIN já conhecido pelo servidor) — mesma ordem do fluxo manual, sem corrida.
+    public interface PinSubmitter {
+        /**
+         * Entrega o PIN ao plano de controle antes do clientchallenge.
+         *
+         * @param pin PIN de 4 dígitos gerado por generatePinString().
+         * @throws Exception se o envio falhar (o fluxo manual continua normalmente).
+         */
+        void submitPin(String pin) throws Exception;
+    }
+
+    private static volatile PinSubmitter pinSubmitter;
+
+    /**
+     * Instala (ou remove, com null) o submissor automático de PIN.
+     *
+     * @param submitter implementação que envia o PIN ao HOST, ou null para o fluxo oficial.
+     */
+    public static void setPinSubmitter(PinSubmitter submitter) {
+        pinSubmitter = submitter;
+    }
+
     public X509Certificate getPairedCert() {
         return serverCert;
     }
@@ -222,7 +251,20 @@ public class PairingManager {
 
         // Require this cert for TLS to this host
         http.setServerCert(serverCert);
-        
+
+        // Moonshine (fork): o pareamento pendente existe desde o getservercert
+        // acima; entregamos o PIN ao plano de controle AGORA, antes de disparar o
+        // clientchallenge abaixo (que decifra com o AES derivado do PIN). Se o
+        // envio falhar, o fluxo continua igual ao oficial (PIN manual).
+        PinSubmitter submitter = pinSubmitter;
+        if (submitter != null) {
+            try {
+                submitter.submitPin(pin);
+            } catch (Exception e) {
+                LimeLog.info("Auto-pair: envio do PIN ao HOST falhou (" + e + "); seguindo manual.");
+            }
+        }
+
         // Generate a random challenge and encrypt it with our AES key
         byte[] randomChallenge = generateRandomBytes(16);
         byte[] encryptedChallenge = encryptAes(randomChallenge, aesKey);

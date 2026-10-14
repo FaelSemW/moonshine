@@ -9,7 +9,96 @@
 #include <openssl/x509.h>
 #include <openssl/evp.h>
 
+#include <QEventLoop>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QTimer>
+#include <QUrl>
+
 #define REQUEST_TIMEOUT_MS 5000
+
+// ---- Moonshine (fork): relay do PIN ao plano de controle Moonshine ----------
+//
+// O PIN do pareamento GameStream é GERADO por este cliente. Em vez de exibi-lo
+// para o usuário digitar na Web UI do Sunshine, guardamos aqui a URL/token do
+// HOST Moonshine e, dentro de pair(), entregamos o PIN ao HOST
+// (POST /api/pair/pin) — que o repassa à API oficial do Sunshine (POST /api/pin).
+namespace {
+
+QMutex g_relayMutex;
+QString g_relayBaseUrl;  // ex.: http://192.168.0.10:48100 (vazio = relay desligado)
+QString g_relayToken;
+
+// POST JSON bloqueante ao HOST. Usa QEventLoop local porque a thread de
+// pareamento vem do QThreadPool e não roda um loop de eventos por padrão.
+bool relayPinToMoonshine(const QString& baseUrl, const QString& token, const QString& pin)
+{
+    QUrl url(baseUrl + QStringLiteral("/api/pair/pin"));
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Authorization", "Bearer " + token.toUtf8());
+    request.setTransferTimeout(10000);
+
+    QJsonObject body;
+    body["pin"] = pin;
+    body["name"] = QStringLiteral("moonshine-desktop");
+
+    QNetworkAccessManager nam;
+    QNetworkReply* reply = nam.post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    QEventLoop loop;
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QTimer::singleShot(10000, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    if (!reply->isFinished()) {
+        reply->abort();
+        reply->deleteLater();
+        qWarning() << "Moonshine auto-pair: timeout ao entregar o PIN";
+        return false;
+    }
+
+    int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    bool ok = status >= 200 && status < 300;
+    if (!ok) {
+        qWarning() << "Moonshine auto-pair: HOST recusou o PIN (HTTP" << status << ")"
+                   << reply->readAll();
+    }
+    reply->deleteLater();
+    return ok;
+}
+
+// Chamado em pair() entre getservercert e clientchallenge. Sem relay configurado
+// (jogador sem sessão Moonshine), não faz nada e o fluxo oficial continua.
+void relayMoonshinePinIfEnabled(const QString& pin)
+{
+    QString base, token;
+    {
+        QMutexLocker locker(&g_relayMutex);
+        base = g_relayBaseUrl;
+        token = g_relayToken;
+    }
+    if (base.isEmpty() || token.isEmpty()) {
+        return;
+    }
+    while (base.endsWith('/')) {
+        base.chop(1);
+    }
+    relayPinToMoonshine(base, token, pin);
+}
+
+}  // namespace
+
+void NvPairingManager::setMoonshineRelay(const QString& baseUrl, const QString& token)
+{
+    QMutexLocker locker(&g_relayMutex);
+    g_relayBaseUrl = baseUrl.trimmed();
+    g_relayToken = token;
+}
 
 NvPairingManager::NvPairingManager(NvComputer* computer) :
     m_Http(computer)
@@ -261,6 +350,12 @@ NvPairingManager::pair(QString appVersion, QString pin, QSslCertificate& serverC
     // Pin this cert for TLS until pairing is complete. If successful, we will propagate
     // the cert into the NvComputer object and persist it.
     m_Http.setServerCert(unverifiedServerCert);
+
+    // Moonshine (fork): o pareamento pendente existe desde o getservercert acima;
+    // entregamos o PIN ao plano de controle AGORA, antes de disparar o
+    // clientchallenge abaixo (que decifra com o AES derivado do PIN). Se o envio
+    // falhar ou não houver relay, o fluxo segue idêntico ao oficial (PIN manual).
+    relayMoonshinePinIfEnabled(pin);
 
     QByteArray randomChallenge = generateRandomBytes(16);
     QByteArray encryptedChallenge = encrypt(randomChallenge, aesKey);
