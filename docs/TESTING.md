@@ -30,8 +30,9 @@ de isolamento (`moonshine-helper.sh`) — é o que permite criar/remover o
 usuário dedicado da sessão de jogo. Recusar não quebra a instalação: só o
 modo `game` fica indisponível (o modo `full` funciona normalmente).
 
-**Esperado:** mensagens `OK` para Node.js, Sunshine, **helper de isolamento
-autorizado** e serviço. Ao final, o endereço do painel. Confirme:
+**Esperado:** mensagens `OK` para Node.js, Sunshine, **Tailscale** (instalado
+pelo próprio script se ausente), **helper de isolamento autorizado** e serviço.
+Ao final, o endereço do painel. Confirme:
 
 ```bash
 sudo -l | grep moonshine-helper   # deve listar .../deploy/bazzite/moonshine-helper.sh
@@ -158,6 +159,11 @@ código é recusado (401).
 
 ## Etapa 12 — Online para um amigo (Tailscale, sem internet pública)
 
+O instalador (Etapa 1) já garante o Tailscale nos dois lados do desenho: no
+HOST (Flatpak, instalado pelo script) e no app do jogador (VPN embutida no
+próprio app Moonshine — ver Etapa 13). Falta só o **login** sua conta:
+
+0. Abra o app **Tailscale** no Bazzite e faça login (uma vez, conta sua).
 1. Painel → aba **Configuração** → passo **3 · Rede para amigos (Tailscale)** →
    **Expor painel no IP Tailscale** (isso aponta painel **e Sunshine** ao IP
    100.x do Bazzite) → reinicie o serviço.
@@ -171,8 +177,10 @@ flatpak run --command=tailscale com.tailscale.tailscale serve --bg --https=443 h
 tailscale serve --bg --https=443 http://127.0.0.1:48100
 ```
 
-3. Convide o amigo para a sua rede Tailscale; ele instala o Tailscale no
-   celular/PC dele.
+3. Convide o amigo para a sua rede Tailscale. **Hoje** (antes do suporte
+   embutido nos apps) ele instala o Tailscale no celular/PC dele e entra na
+   sua rede; quando o modo online estiver nos apps, ele instala **só o
+   Moonshine** (Etapa 13).
 4. No app dele: endereço `http://<ip-tailscale-do-bazzite>:48100` → **Entrar com
    código** → colar o convite → jogar.
 

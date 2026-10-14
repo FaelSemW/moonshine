@@ -12,6 +12,9 @@
 # Princípios para a base imutável do Bazzite:
 #  - NÃO usa dnf (raiz somente leitura).
 #  - Sunshine = Flatpak oficial (dev.lizardbyte.app.Sunshine) do Flathub.
+#  - Tailscale = Flatpak oficial (rede privada; os DOIS lados precisam dele —
+#    este HOST com login da conta do dono, e o app do jogador com a VPN
+#    embutida dentro do próprio app Moonshine).
 #  - Node.js = binário oficial em ~/.local (sem root).
 #  - Serviço = user unit do systemd (sem sudo no dia a dia).
 #  - UM sudo único e opcional: autoriza o helper de isolamento via sudoers
@@ -169,11 +172,41 @@ install_isolation_helper() {
   ok "helper de isolamento autorizado ($rules)"
 }
 
+# ------------------------------------------------------------------ Tailscale -
+# A rede privada (Tailscale) é o meio de os jogadores alcançarem o HOST sem
+# internet pública — os DOIS lados precisam dela: este HOST (instalado aqui;
+# login da conta do dono, uma vez) e o app do jogador (VPN embutida no próprio
+# app Moonshine — o jogador não instala nem configura nada). Opcional: sem
+# Tailscale o painel continua funcionando na máquina local.
+TS_FLATPAK="com.tailscale.tailscale"
+install_tailscale() {
+  if command -v tailscale >/dev/null 2>&1 || flatpak info "$TS_FLATPAK" >/dev/null 2>&1; then
+    ok "Tailscale já instalado"
+    return
+  fi
+  info "Instalando o Tailscale (Flatpak, sem sudo)"
+  if ! command -v flatpak >/dev/null 2>&1; then
+    warn "flatpak ausente: instale o Tailscale depois (Discover)."
+    return 0
+  fi
+  flatpak --user remote-add --if-not-exists flathub \
+    https://flathub.org/repo/flathub.flatpakrepo || true
+  if flatpak --user install -y flathub "$TS_FLATPAK"; then
+    ok "Tailscale instalado ($TS_FLATPAK) — abra o app e faça login com a sua conta"
+  else
+    warn "falha ao instalar o Tailscale; instale pelo Discover quando quiser jogar de fora."
+  fi
+}
+
 # -------------------------------------------------------------------- rede ----
 print_network() {
   info "Rede privada (recomendado — não exponha o painel na internet)"
-  echo "    flatpak install -y flathub com.tailscale.tailscale"
-  echo "    Depois use Tailscale Serve para HTTPS no endereço Tailscale."
+  echo "    1) Abra o app Tailscale e faça login com a SUA conta (uma vez)."
+  echo "    2) Termine o HTTPS do painel no terminal:"
+  echo "       flatpak run --command=tailscale com.tailscale.tailscale serve --bg --https=443 http://127.0.0.1:48100"
+  echo "    3) No painel (passo 3) clique em 'Expor painel no IP Tailscale' e"
+  echo "       cole a chave da rede em 'VPN embutida nos apps (modo online)'."
+  echo "       Jogadores: nada extra — o app Moonshine entra sozinho na rede."
   local ip; ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   echo
   ok "Painel (após login): http://127.0.0.1:48100  ${ip:+ | rede: http://$ip:48100}"
@@ -183,6 +216,7 @@ print_network() {
 main() {
   install_node
   install_sunshine || true
+  install_tailscale
   install_deps
   install_isolation_helper
   install_service

@@ -31,11 +31,14 @@ O script:
 - instala Node.js local se ausente;
 - baixa o código para `~/moonshine`;
 - instala/ativa o Sunshine via Flatpak;
+- instala o **Tailscale** via Flatpak se ausente (rede privada — os dois
+  lados precisam dele: este HOST e o app do jogador, cuja VPN vai embutida
+  no próprio app Moonshine);
 - **pede um único sudo** para autorizar o helper de isolamento
   (`/etc/sudoers.d/moonshine-isolation` — só o `moonshine-helper.sh` do
   serviço é autorizado; recusar mantém tudo funcionando menos o modo `game`);
 - registra e habilita a user unit `moonshine-host.service`;
-- imprime instruções do Tailscale.
+- imprime os próximos passos do Tailscale (login no app + comando serve).
 
 2. Confirme o helper: `sudo -l | grep moonshine-helper`.
 3. Abra `http://127.0.0.1:48100` e crie o administrador.
