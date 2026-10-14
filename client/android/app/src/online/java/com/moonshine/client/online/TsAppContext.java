@@ -18,6 +18,7 @@ import java.net.InetAddress;
 import java.net.InterfaceAddress;
 import java.net.NetworkInterface;
 import java.util.Enumeration;
+import java.util.List;
 
 /**
  * Ponte entre o backend Go do Tailscale (libtailscale oficial) e o Android.
@@ -69,7 +70,7 @@ final class TsAppContext implements libtailscale.AppContext {
     }
 
     @Override
-    public int getSDKInt() throws Exception {
+    public long getSDKInt() throws Exception {
         return Build.VERSION.SDK_INT;
     }
 
@@ -122,7 +123,8 @@ final class TsAppContext implements libtailscale.AppContext {
                 o.put("mtu", 0);
             }
             o.put("up", nif.isUp());
-            o.put("broadcast", nif.supportsBroadcast());
+            // Android não expõe supportsBroadcast(); o parser Go aceita false.
+            o.put("broadcast", false);
             o.put("loopback", nif.isLoopback());
             o.put("pointToPoint", nif.isPointToPoint());
             o.put("multicast", nif.supportsMulticast());
@@ -152,9 +154,9 @@ final class TsAppContext implements libtailscale.AppContext {
 
     private static int prefixLen(NetworkInterface nif, InetAddress a) {
         try {
-            Enumeration<InterfaceAddress> e = nif.getInterfaceAddresses();
-            while (e.hasMoreElements()) {
-                InterfaceAddress ia = e.nextElement();
+            // No Android getInterfaceAddresses() devolve List (não Enumeration).
+            List<InterfaceAddress> e = nif.getInterfaceAddresses();
+            for (InterfaceAddress ia : e) {
                 if (ia.getAddress().equals(a)) {
                     return ia.getNetworkPrefixLength();
                 }
@@ -220,8 +222,7 @@ final class TsAppContext implements libtailscale.AppContext {
     public boolean bindSocketToNetwork(int fd) {
         // Mantém os sockets do Tailscale na rede ativa do aparelho (fora do túnel).
         try {
-            ConnectivityManager cm =
-                    (ConnectivityManager) ctx.getSystemService(Context.CONNECT_SERVICE);
+            ConnectivityManager cm = (ConnectivityManager) ctx.getSystemService(ConnectivityManager.class);
             if (cm == null) {
                 return false;
             }

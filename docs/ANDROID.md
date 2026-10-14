@@ -12,23 +12,52 @@ embutido.
 
 ## Fluxo do jogador
 
-1. Abre o app e informa o **endereço do HOST** (ex.: `http://192.168.0.10:48100`,
-   ou o IP Tailscale para jogar fora de casa).
-2. **Entrar com código**: cola o **código de convite** gerado no painel do HOST
-   (aba Convites) — sem senha. (Alternativa: usuário/senha de jogador; esse
-   caminho é sempre modo `game` isolado.)
-3. **Jogar (reservar sessão)** — reserva e prepara a sessão no HOST; o modo do
+1. **Entrar com código**: cola o **código de convite** gerado no painel do HOST
+   (aba Convites). Com o modo online configurado, o painel emite o **código
+   online** (`MS1-...`) — ele carrega sozinho o endereço do HOST na rede
+   privada e a chave da VPN embutida; o app entra na rede e resgata o convite
+   sem digitar mais nada. Sem modo online, informe o endereço do HOST à mão
+   (ex.: `http://192.168.0.10:48100`). (Alternativa: usuário/senha de
+   jogador; esse caminho é sempre modo `game` isolado.)
+2. **Jogar (reservar sessão)** — reserva e prepara a sessão no HOST; o modo do
    convite (`game` isolado ou `full` PC completo) aparece no status.
-4. Na **1ª vez**, o Moonlight **pareia sozinho**: o PIN é gerado pelo próprio
+3. Na **1ª vez**, o Moonlight **pareia sozinho**: o PIN é gerado pelo próprio
    app e entregue ao HOST (auto-pair) — **não há PIN para digitar**. Depois,
    escolhe o jogo (ou o app **Desktop**, no modo `full`) e inicia o stream.
-5. **Encerrar sessão** libera o PC. Só **um jogador por vez**.
+4. **Encerrar sessão** libera o PC **e derruba o túnel da rede privada**. Só
+   **um jogador por vez**.
+
+## VPN embutida (modo online — Tailscale real dentro do APK)
+
+O app incorpora a **biblioteca oficial do Tailscale** (`libtailscale`,
+repositório `tailscale/tailscale-android`, BSD-3), compilada no CI com
+gomobile e embutida como AAR — o jogador **não instala Tailscale nem outro
+app de VPN**. Como funciona:
+
+- `OnlineCode` (source set principal) decodifica o código `MS1-` **offline**:
+  token + IPv4 do HOST + chave de rede.
+- `TsOnlineVpn` sobe o backend Go (`Libtailscale.start`), o serviço
+  `MoonshineVpnService` (VpnService sem root) monta o túnel pelos callbacks
+  oficiais e o login acontece **sem interação** via
+  `POST /localapi/v0/start` com a AuthKey, com polling até
+  `BackendState=Running` + `TUN=true`.
+- Com o túnel ativo, o `100.x` do HOST é roteado normalmente — o código de
+  streaming do Moonlight **não muda nada**.
+- O consentimento de VPN é pedido **uma vez por aparelho**; "Encerrar
+  sessão"/"Sair" derruba o túnel (logout do tailnet).
+- APKs compilados **sem** o AAR (build local simples) continuam funcionando
+  no modo local e mostram aviso honesto ao tentar o modo online.
+- Requisito: `minSdk 26` (Android 8.0) — exigência do `libtailscale`
+  (`-androidapi 26`). Sem telemetria: `IsClientLoggingEnabled` = false.
 
 ## O que mudamos em relação ao upstream (moonlight-android)
 
 - `com/moonshine/client/` — tela de controle (`MainActivity`), API do HOST
   (`HostApi`: login/resgate de código/reserva/heartbeat) e auto-pareamento
   (`MoonshinePair`).
+- `com/moonshine/client/online/` — VPN embutida: `OnlineCode` (código `MS1-`),
+  `OnlineVpn` (fachada) e, no source set `src/online` (só com o AAR),
+  `TsOnlineVpn`, `TsAppContext` e `MoonshineVpnService`.
 - `com/limelight/PcView.java` — omita o diálogo do PIN quando há sessão
   Moonshine (fluxo automático) e mensagem própria de falha auto.
 - `com/limelight/nvstream/http/PairingManager.java` — submissor de PIN: a

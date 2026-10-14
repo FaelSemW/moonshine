@@ -1,6 +1,8 @@
 #include "moonshinebackend.h"
 
 #include "nvpairingmanager.h"
+#include "onlinecode.h"
+#include "onlinevpn.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -13,6 +15,10 @@ MoonshineBackend::MoonshineBackend(QObject* parent)
     : QObject(parent),
       m_heartbeat(new QTimer(this))
 {
+    // Progresso da rede privada (Tailscale) repassado à UI (statusLabel da QML).
+    connect(OnlineVpn::instance(), &OnlineVpn::statusChanged,
+            this, &MoonshineBackend::statusChanged);
+
     // Mantém a sessão viva enquanto o jogador estiver conectado.
     m_heartbeat->setInterval(5000);
     connect(m_heartbeat, &QTimer::timeout, this, [this]() {
@@ -71,11 +77,45 @@ void MoonshineBackend::login(const QString& baseUrl,
 
 void MoonshineBackend::redeem(const QString& baseUrl, const QString& code)
 {
-    m_baseUrl = baseUrl.trimmed();
+    QString url = baseUrl.trimmed();
+    while (url.endsWith('/')) {
+        url.chop(1);
+    }
+    m_token.clear();
+
+    // Código online (MS1-...): carrega sozinho o endereço do HOST na rede
+    // privada + a chave da VPN — o app entra na rede ANTES de falar com o HOST.
+    const OnlineCode oc = OnlineCode::parse(code);
+    QString useCode = code;
+    if (oc.valid) {
+        url = QStringLiteral("http://") + oc.hostIpv4 + QStringLiteral(":48100");
+        useCode = oc.token;
+        emit statusChanged(tr("Código online reconhecido — entrando na rede privada..."));
+    }
+
+    // Rede privada ainda fora e o código trouxe a chave: sobe a rede PRIMEIRO
+    // (o HOST em 100.x só é alcançável com o TUN ativo).
+    if (oc.valid && !oc.authKey.isEmpty() && !OnlineVpn::instance()->isReady()) {
+        OnlineVpn::instance()->ensureOnline(
+            oc.authKey, oc.controlUrl, [this, url, useCode](bool ok, const QString& err) {
+                if (ok) {
+                    doRedeem(url, useCode);
+                } else {
+                    emit redeemFinished(false, QString(), err);
+                }
+            });
+        return;
+    }
+
+    doRedeem(url, useCode);
+}
+
+void MoonshineBackend::doRedeem(const QString& url, const QString& code)
+{
+    m_baseUrl = url.trimmed();
     while (m_baseUrl.endsWith('/')) {
         m_baseUrl.chop(1);
     }
-    m_token.clear();
 
     QJsonObject o;
     o["code"] = code;
@@ -136,7 +176,16 @@ void MoonshineBackend::play()
                                   return;
                               }
 
-                              QString target = QJsonDocument::fromJson(b2).object()["streamTarget"].toString();
+                              QJsonObject prep = QJsonDocument::fromJson(b2).object();
+                              QString target = prep["streamTarget"].toString();
+
+                              // Credencial da rede privada (o HOST pode ter
+                              // rotacionado a chave desde o resgate).
+                              QJsonObject on = prep["online"].toObject();
+                              if (!on["authKey"].toString().isEmpty()) {
+                                  m_onlineKey = on["authKey"].toString();
+                                  m_onlineCtrl = on["controlUrl"].toString();
+                              }
 
                               // Separa host:porta (suporta IPv6 entre colchetes).
                               QString host = target;
@@ -157,15 +206,42 @@ void MoonshineBackend::play()
                                   }
                               }
 
-                              startHeartbeat();
-                              emit playFinished(true, host, port, "");
+                              // Alvo na rede privada (100.x) e VPN ainda
+                              // fora: sobe a rede AGORA e só então entrega o
+                              // host ao Moonlight (o streaming não muda nada).
+                              if (!OnlineVpn::instance()->isReady()
+                                  && isPrivateNetHost(host)
+                                  && !m_onlineKey.isEmpty()) {
+                                  emit statusChanged(tr("Sessão reservada. Entrando na rede privada..."));
+                                  OnlineVpn::instance()->ensureOnline(
+                                      m_onlineKey, m_onlineCtrl,
+                                      [this, host, port](bool ok, const QString& err) {
+                                          if (ok) {
+                                              finishPlay(host, port);
+                                          } else {
+                                              emit playFinished(false, "", 0, err);
+                                          }
+                                      });
+                                  return;
+                              }
+
+                              finishPlay(host, port);
                           });
              });
+}
+
+// Entrega o host preparado ao Moonlight (o fluxo de streaming é o de sempre).
+void MoonshineBackend::finishPlay(const QString& host, int port)
+{
+    startHeartbeat();
+    emit playFinished(true, host, port, "");
 }
 
 void MoonshineBackend::endSession()
 {
     stopHeartbeat();
+    // Fora da sessão, sai também da rede privada que NÓS entramos.
+    OnlineVpn::instance()->disconnect();
     qint64 sid = m_sessionId;
     m_sessionId = 0;
     if (sid <= 0) {
@@ -185,6 +261,8 @@ void MoonshineBackend::logout()
         endSession();
     }
     m_token.clear();
+    // Sai da rede privada que NÓS entramos (nunca uma sessão alheia).
+    OnlineVpn::instance()->disconnect();
     // Sem sessão, o pareamento volta ao fluxo oficial (PIN exibido).
     NvPairingManager::setMoonshineRelay(QString(), QString());
     emit autoPairChanged();

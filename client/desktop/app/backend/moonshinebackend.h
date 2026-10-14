@@ -55,6 +55,11 @@ private:
 
     void postJson(const QString& path, const QByteArray& body, bool auth,
                   ReplyCallback cb);
+    // Resgate de fato (corpo do redeem), já com o endereço resolvido — roda
+    // depois que a rede privada estiver (ou não) de pé.
+    void doRedeem(const QString& url, const QString& code);
+    // Entrega o host preparado ao Moonlight (heartbeat + playFinished).
+    void finishPlay(const QString& host, int port);
     void startHeartbeat();
     void stopHeartbeat();
 
@@ -62,6 +67,10 @@ private:
     QString m_baseUrl;
     QString m_token;
     QString m_grantedMode = QStringLiteral("game");
+    // Credencial da rede privada vinda do "prepare" (o HOST pode rotacionar
+    // a chave) — usada quando o streamTarget é 100.x e a VPN ainda não subiu.
+    QString m_onlineKey;
+    QString m_onlineCtrl;
     qint64 m_sessionId = 0;
     QTimer* m_heartbeat;
 };

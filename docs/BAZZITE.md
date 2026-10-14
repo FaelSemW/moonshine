@@ -92,6 +92,13 @@ cole no painel (passo 3 → **VPN embutida nos apps**). Os apps Moonshine
 jogador **não instala Tailscale**. Restrinja `tag:moonshine` no ACL às portas
 do Sunshine (ver `SECURITY.md`).
 
+Com a chave configurada, a aba Convites passa a emitir o **código online**
+(`MS1-...`): um único código que já contém convite + endereço do HOST na rede
++ chave — o app do amigo cola e entra, sem digitar mais nada. Se o `tailscale
+ip -4` não for detectável no contexto do serviço (ex.: só acessível pela GUI
+Flatpak), fixe o IP por `MOONSHINE_TAILSCALE_IP=x.y.z.w` no ambiente do
+serviço `moonshine-host`.
+
 O streaming (Sunshine) usa as portas GameStream/vídeo/áudio/RTSP, que trafegam
 sobre a mesma rede privada (o passo 3 também aponta `sunshineAddress` ao IP
 Tailscale, para o Moonlight dos jogadores conectar de lá).

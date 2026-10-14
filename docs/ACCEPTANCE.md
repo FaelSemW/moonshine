@@ -158,15 +158,17 @@ Procedimento para reproduzir: `npm test` e `npm start` nesta máquina.
       streaming real. Procedimento: ver `docs/DESKTOP.md`.
 - [ ] Linux: mesmo código do cliente desktop; empacotar (.AppImage/.deb) e
       validar em distro real.
-- [ ] **VPN embutida nos apps (modo online)**: incorporar o cliente Tailscale
-      nos apps Android (VpnService + biblioteca oficial) e Windows/Linux
-      (binários/userspace + elevação única) para que o jogador entre na rede
-      privada do dono **sem instalar Tailscale**, usando a chave entregue em
-      `prepare`. Procedimento: com chave configurada no painel, abrir o app em
-      rede externa (só internet), entrar com convite e confirmar que o
-      streaming alcança o HOST (ping ao `streamTarget` 100.x + streaming ativo).
-      O lado do HOST (chave, entrega em `prepare`, painel) já está pronto e
-      coberto por teste.
+- [x] **VPN embutida nos apps (modo online)** — implementada nos dois apps:
+      Android (biblioteca oficial `libtailscale` via gomobile, VpnService sem
+      root) e Windows (instala o cliente oficial com verificação de assinatura
+      + elevação única e dirige via CLI). O convite virou autossuficiente
+      (código `MS1-` com endereço + chave) — fim do pega-eto chave↔VPN.
+      Compilação: CI (APK e executável); HOST coberto por teste.
+- [ ] **VPN embutida — validação em hardware**: com chave configurada, entrar
+      com código `MS1-` em aparelho Android e PC Windows EXTERNOS (só internet)
+      e confirmar: consentimento/instalação → "Rede privada ativa" → resgate →
+      streaming real ao `streamTarget` `100.x` → saída da rede ao encerrar.
+      Procedimento: `docs/TESTING.md` Etapa 14.
 
 ## Como cada pendência será confirmada
 

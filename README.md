@@ -33,7 +33,7 @@ Requer Node.js 22.5+ (testado com 22.23.3). Sem dependências npm externas.
 
 ```sh
 npm start        # sobe em http://127.0.0.1:48100
-npm test         # 41 testes automatizados
+npm test         # 48 testes automatizados
 npm run check    # verificação de sintaxe
 ```
 

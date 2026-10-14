@@ -215,12 +215,43 @@ curl -s http://127.0.0.1:48100/api/session/prepare \
    null}`. Já `/api/admin/network` (painel) mostra apenas
    `"configured": true` — nunca o valor.
 
-4. **Apps**: o suporte embutido (VPN subindo dentro do app Android/desktop ao
-   preparar a sessão) está em implementação — acompanhe em
-   `docs/ACCEPTANCE.md`. Quando disponível, o fluxo do jogador vira: abrir o
-   app → endereço + **código de convite** → jogar. Nada além do app.
+4. **Apps**: o suporte embutido já está implementado. Com a chave configurada,
+   a aba Convites emite o **código online** (`MS1-...`) — um único código que o
+   jogador cola no app (Android ou Windows). O app decodifica, entra na
+   rede privada sozinho e só então resgata o convite. Fluxo de validação na
+   Etapa 14.
 5. Desativar/rotacionar: painel → **Desativar modo online**, ou gere outra
-   chave no Tailscale e cole por cima (rotação).
+   chave no Tailscale e cole por cima (rotação). Códigos `MS1-` antigos
+   carregam a chave antiga — gere convites novos após rotacionar.
+
+---
+
+## Etapa 14 — Validar o modo online NOS APPS (VPN embutida)
+
+Com o HOST no ar e a chave configurada (Etapa 13):
+
+1. Painel → **Convites** → gere um convite. Com a chave configurada, a lista
+   mostra o **código online** (`MS1-...`) — use **Copiar (app)**.
+2. **Android** (aparelho com internet, FORA da rede local do HOST):
+   - instale o APK do artefato `moonshine-client-android`;
+   - cole o código online no campo "Código de convite" → **Entrar com código**;
+   - o app pede **1 permissão de VPN** (uma vez por aparelho) → autorize;
+   - status: "Rede privada ativa." → "Conectado como ...";
+   - **Jogar**: reserva → prepara → Moonlight abre com o host `100.x`;
+     pareie (automático) e confirme o **streaming real**.
+3. **Windows** (PC externo, só internet):
+   - execute o `.exe` do artefato `moonshine-client-windows-x64`;
+   - cole o mesmo código online → **Entrar com código**;
+   - se o Tailscale não existir no PC, o app baixa o instalador **oficial**
+     (assinatura Authenticode verificada — só "Tailscale Inc" passa) e pede
+     **uma elevação UAC** para instalar em silencioso;
+   - depois entra na rede sozinho ("Rede privada ativa.") e o fluxo segue:
+     reserva → Moonlight → streaming.
+4. **Fim**: "Encerrar sessão"/"Sair" → o app sai da rede privada (Android
+   derruba o túnel; Windows roda `tailscale logout`, deixando o PC do amigo
+   como estava — o Tailscale instalado permanece, inativo).
+5. Se falhar: anote a mensagem exata do app (ela diz se parou na chave, na
+   VPN ou no streaming) e rode o `curl` de conferência do item 3 da Etapa 13.
 
 ## O que enviar se algo falhar
 

@@ -60,7 +60,12 @@ exatos estão registrados abaixo para rastreabilidade.
   sozinhos na rede privada (sem app de VPN separado no dispositivo do
   jogador). A coordenação da rede usa o serviço do Tailscale (conta do dono);
   URL de controle alternativa (Headscale auto-hospedado) é suportada no
-  config. Incorporação dos clientes: fase em implementação.
+  config. Incorporação: **Android** = `libtailscale` (biblioteca oficial
+  `tailscale/tailscale-android`, compilada no CI com gomobile, BSD-3);
+  **Windows** = cliente oficial baixado em tempo de execução do
+  `pkgs.tailscale.com` (assinatura Authenticode verificada antes de instalar)
+  e dirigido via CLI. A chave também viaja no código online `MS1-` do convite
+  (o código É a credencial — ver `SECURITY.md`).
 - Obrigações: BSD-3-Clause é compatível com GPL-3 (incorporação permitida com
   atribuição — `THIRD_PARTY.md` e créditos dos apps). **Marca**: "Tailscale" e
   logotipo são marcas; nos apps o recurso aparece como "modo online"/"VPN

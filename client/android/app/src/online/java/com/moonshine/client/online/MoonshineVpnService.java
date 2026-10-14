@@ -138,14 +138,14 @@ public class MoonshineVpnService extends VpnService implements libtailscale.IPNS
         @Override
         public void excludeRoute(String addr, int prefix) throws Exception {
             if (Build.VERSION.SDK_INT >= 33) {
-                b.excludeRoute(new IpPrefix(addr + "/" + prefix));
+                b.excludeRoute(new IpPrefix(java.net.InetAddress.getByName(addr), prefix));
             }
             // Abaixo de API33 não há excludeRoute, mas com RouteAll=false o
             // túnel recebe só as rotas100.x — nada do aparelho é capturado.
         }
 
         @Override
-        public ParcelFileDescriptor establish() throws Exception {
+        public libtailscale.ParcelFileDescriptor establish() throws Exception {
             ParcelFileDescriptor pfd = b.establish();
             if (pfd == null) {
                 throw new IOException("VPN não estabelecida (cancelada pelo sistema)");

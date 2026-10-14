@@ -188,6 +188,28 @@ Regras do dono (obrigatórias para o risco ficar controlado):
   isolamento de sessão segue valendo; no modo `full` o jogador vê o desktop
   do dono — o mesmo contrato de confiança do convite `full` de sempre.
 
+### Código online do convite (código `MS1-`)
+
+Para o app entrar na rede **antes** de falar com o HOST (o HOST só é
+alcançável dentro da rede — pega-eto resolvido), a aba Convites emite um
+**código online**: o mesmo convite em formato estendido (`MS1-...`,
+base32 de Crockford) carregando token + endereço do HOST na rede + **chave de
+autenticação**. O app decodifica localmente, sobe a VPN com a chave e só
+então resgata o token. Modelo de ameaça:
+
+- O código online **é a credencial completa** (convite + acesso à rede). Quem
+  recebe o código, recebe a rede — envie-o pelo mesmo canal seguro do convite
+  de sempre (pessoa a pessoa), nunca publique.
+- **Revogar o convite** corta o resgate do token; **rotacionar/revogar a
+  chave** no Tailscale corta a rede. Camadas independentes: para expulsar
+  alguém, faça as duas (e remova o dispositivo do tailnet no admin).
+- A chave não é "para sempre" no aparelho do jogador: o app usa-a para entrar
+  e o dispositivo fica registrado no tailnet, gerenciável no admin do dono.
+- O ACL (`tag:moonshine` restrito às portas do Sunshine) continua sendo o que
+  impede um jogador de alcançar o resto da rede do dono — mesmo com a chave.
+- O valor da chave **nunca aparece no painel** (apenas "chave configurada"),
+  não é logado e não é ecoado por nenhuma resposta administrativa.
+
 ## Credenciais do Sunshine
 
 O HOST pode guardar, **em memória de processo**, as credenciais da Web UI do
