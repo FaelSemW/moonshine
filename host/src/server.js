@@ -252,7 +252,15 @@ async function handleApi(req, res, url) {
       throw new HttpError(429, 'muitas tentativas de pareamento. Aguarde um minuto.');
     }
     const status = await sunshine.readPairingStatus();
-    const pairings = status.pending?.pairings || [];
+    if (status.pending == null) {
+      // A API do Sunshine não respondeu (fora do ar ou credenciais erradas) —
+      // dizer "sem pareamento pendente" aqui seria enganoso.
+      throw new HttpError(
+        502,
+        'API do Sunshine indisponível — confira o Sunshine e as credenciais na aba Sunshine.'
+      );
+    }
+    const pairings = status.pending.pairings || [];
     if (pairings.length === 0) {
       throw new HttpError(409, 'nenhum pareamento pendente no Sunshine');
     }

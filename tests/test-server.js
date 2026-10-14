@@ -301,6 +301,17 @@ test('auto-pair: sem pareamento pendente no Sunshine → 409', async () => {
   }
 });
 
+test('auto-pair: API do Sunshine inacessível/sem credenciais → 502 (não 409)', async () => {
+  const t = await login('admin', 'senha-admin-123');
+  sunshine.__setConfigOverride(() => ({ ok: false, status: 401, json: () => ({}) }));
+  try {
+    const r = await j('/api/pair/pin', { method: 'POST', token: t, body: { pin: '9999' } });
+    assert.equal(r.status, 502);
+  } finally {
+    sunshine.__setConfigOverride(null);
+  }
+});
+
 async function login(username, password) {
   const r = await j('/api/login', { method: 'POST', body: { username, password } });
   return r.data.token;
