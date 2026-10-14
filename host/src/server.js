@@ -10,6 +10,7 @@
 //  - Cabeçalhos de segurança em toda resposta.
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { join, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
@@ -111,6 +112,31 @@ function requireAdmin(req) {
   return a;
 }
 
+// Limitador simples em memória por chave — proteção contra força bruta em
+// endpoints sensíveis (redeem), no mesmo espírito do lockout de login.
+const rlBuckets = new Map();
+function rateLimit(key, limit, windowMs) {
+  const nowMs = Date.now();
+  const b = rlBuckets.get(key);
+  if (!b || nowMs - b.start >= windowMs) {
+    rlBuckets.set(key, { start: nowMs, count: 1 });
+    return false;
+  }
+  b.count += 1;
+  return b.count > limit;
+}
+
+// Gera código de convite legível e de alta entropia: base32 de Crockford
+// (sem I/L/O/U para evitar troca visual), 10 símbolos = 50 bits, formatado
+// XXXXX-XXXXX. 32 símbolos divide 256, então bytes[i] % 32 não enviesa.
+const INVITE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+function generateInviteCode() {
+  const bytes = randomBytes(10);
+  let out = '';
+  for (let i = 0; i < 10; i++) out += INVITE_ALPHABET[bytes[i] % 32];
+  return `${out.slice(0, 5)}-${out.slice(5)}`;
+}
+
 // Valida campos de usuário contra injeção/valores maliciosos.
 function validateUserFields({ username, password, role }) {
   if (typeof username !== 'string' || !/^[a-zA-Z0-9._-]{3,32}$/.test(username)) {
@@ -171,6 +197,47 @@ async function handleApi(req, res, url) {
     }
   }
 
+  // Resgate de código de convite: o código É a credencial do jogador (enviada
+  // por ele pelo operador). Concede um token carregando o MODO do convite.
+  if (method === 'POST' && path === '/api/redeem') {
+    const body = await readJsonBody(req);
+    const { code } = body;
+    if (typeof code !== 'string' || !code.trim()) {
+      throw new HttpError(400, 'código ausente');
+    }
+    if (rateLimit(`redeem:${clientIp(req)}`, 20, 60_000)) {
+      throw new HttpError(429, 'muitas tentativas. Aguarde um minuto.');
+    }
+    const invite = db.findInviteByCode(code.trim());
+    if (!invite) {
+      db.logEvent('warn', 'redeem de código inexistente', { ip: clientIp(req) });
+      throw new HttpError(401, 'código inválido');
+    }
+    if (!invite.active) throw new HttpError(401, 'código revogado');
+    if (invite.expires_at != null && invite.expires_at <= db.now()) {
+      throw new HttpError(401, 'código expirado');
+    }
+    const user = db.findUserById(invite.user_id);
+    if (!user || !user.active) throw new HttpError(401, 'código inválido');
+    // Consome 1 uso de forma atômica (evita estourar max_uses sob corrida).
+    if (!db.consumeInvite(invite.id)) {
+      throw new HttpError(401, 'código esgotado ou inválido');
+    }
+    const mode = invite.mode === 'full' ? 'full' : 'game';
+    const { token } = auth.issueToken(user.id, mode);
+    db.logEvent('info', 'código resgatado', {
+      inviteId: invite.id,
+      userId: user.id,
+      mode,
+      ip: clientIp(req),
+    });
+    return sendJson(res, 200, {
+      token,
+      user: { id: user.id, username: user.username, role: user.role },
+      mode,
+    });
+  }
+
   // Logout (revoga o token atual).
   if (method === 'POST' && path === '/api/logout') {
     const a = requireAuth(req);
@@ -191,8 +258,11 @@ async function handleApi(req, res, url) {
       throw new HttpError(403, 'sem permissão');
     }
     try {
-      const { session: s, resumed } = session.reserveSession(a.user, a.tokenRow.id);
-      return sendJson(res, 200, { sessionId: s.id, resumed, state: s.state });
+      // O modo vem da permissão gravada no token (concedida no login/redeem),
+      // não de entrada livre do cliente.
+      const mode = a.tokenRow.mode === 'full' ? 'full' : 'game';
+      const { session: s, resumed } = session.reserveSession(a.user, a.tokenRow.id, mode);
+      return sendJson(res, 200, { sessionId: s.id, resumed, state: s.state, mode: s.mode });
     } catch (e) {
       if (e instanceof session.SessionError) throw new HttpError(e.status, e.message);
       throw e;
@@ -211,6 +281,7 @@ async function handleApi(req, res, url) {
       return sendJson(res, 200, {
         sessionId: r.session.id,
         state: r.session.state,
+        mode: r.mode,
         streamTarget: r.streamTarget,
         isolation: r.isolation,
         library: r.library,
@@ -301,6 +372,55 @@ async function handleAdmin(req, res, url, sub) {
     if (id === a.user.id) throw new HttpError(400, 'não é possível remover a si mesmo');
     const ok = db.deleteUser(id);
     if (!ok) throw new HttpError(404, 'usuário inexistente');
+    return sendJson(res, 200, { ok: true });
+  }
+
+  // ---- Códigos de convite (o jogador entra pelo código, não por senha) ----
+  if (sub === 'invites' && method === 'GET') {
+    requireAdmin(req);
+    return sendJson(res, 200, { invites: db.listInvites() });
+  }
+  if (sub === 'invites' && method === 'POST') {
+    const a = requireAdmin(req);
+    const body = await readJsonBody(req);
+    const mode = body.mode === 'full' ? 'full' : 'game';
+    const maxUses = Math.min(Math.max(Number(body.maxUses) || 1, 1), 1000);
+    let expiresAt = null;
+    if (body.expiresInMin != null && body.expiresInMin !== '') {
+      const mins = Number(body.expiresInMin);
+      if (!Number.isFinite(mins) || mins <= 0) throw new HttpError(400, 'validade inválida');
+      expiresAt = db.now() + Math.round(mins * 60_000);
+    }
+    const note = typeof body.note === 'string' ? body.note.slice(0, 200) : null;
+
+    // Jogador alvo: usa o informado ou cria um dedicado para este convite.
+    let userId = body.userId != null && body.userId !== '' ? Number(body.userId) : null;
+    let username = null;
+    if (!userId) {
+      const uname = `jogador-${generateInviteCode().replace(/-/g, '').slice(0, 6).toLowerCase()}`;
+      if (db.findUserByName(uname)) throw new HttpError(409, 'usuário de convite já existe');
+      // Senha aleatória nunca divulgada: a credencial do jogador é o código.
+      const hash = auth.hashPassword(randomBytes(24).toString('base64url'));
+      userId = db.createUser({ username: uname, passwordHash: hash, role: 'player' });
+      username = uname;
+    } else {
+      const u = db.findUserById(userId);
+      if (!u) throw new HttpError(404, 'usuário inexistente');
+      username = u.username;
+    }
+
+    const code = generateInviteCode();
+    const id = db.createInvite({ code, mode, userId, note, expiresAt, maxUses, createdBy: a.user.id });
+    db.logEvent('info', 'convite criado', { inviteId: id, mode, userId, maxUses, expiresAt });
+    return sendJson(res, 201, { ok: true, inviteId: id, code, mode, username, expiresAt, maxUses });
+  }
+  if (sub === 'invites/revoke' && method === 'POST') {
+    requireAdmin(req);
+    const body = await readJsonBody(req);
+    const id = Number(body.id);
+    if (!db.getInvite(id)) throw new HttpError(404, 'convite inexistente');
+    db.revokeInvite(id);
+    db.logEvent('warn', 'convite revogado', { inviteId: id });
     return sendJson(res, 200, { ok: true });
   }
 

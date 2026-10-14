@@ -157,6 +157,104 @@ test('rede: GET mostra bind e Tailscale; POST valida bindHost', async () => {
   assert.equal(r.data.requiresRestart, true);
 });
 
+test('convite: criar → resgatar → modo full na sessão (PC completo)', async () => {
+  const t = await login('admin', 'senha-admin-123');
+  // Cria convite modo full, 1 uso.
+  let r = await j('/api/admin/invites', {
+    method: 'POST',
+    token: t,
+    body: { mode: 'full', maxUses: 1, note: 'amigo' },
+  });
+  assert.equal(r.status, 201);
+  const code = r.data.code;
+  assert.ok(code && r.data.mode === 'full');
+
+  // Lista contém o convite.
+  r = await j('/api/admin/invites', { token: t });
+  assert.equal(r.status, 200);
+  assert.ok(r.data.invites.some((i) => i.code === code));
+
+  // Resgata: concede token com modo full.
+  r = await j('/api/redeem', { method: 'POST', body: { code } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.mode, 'full');
+  const ft = r.data.token;
+  assert.ok(ft);
+
+  // Reserva → modo full.
+  r = await j('/api/session/reserve', { method: 'POST', token: ft });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.mode, 'full');
+  const sid = r.data.sessionId;
+
+  // Prepare → modo full, sem isolamento de SO (é o objetivo do PC completo).
+  r = await j('/api/session/prepare', { method: 'POST', token: ft, body: { sessionId: sid } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.mode, 'full');
+  assert.equal(r.data.isolation.isolated, false);
+
+  // Encerra.
+  r = await j('/api/session/end', { method: 'POST', token: ft, body: { sessionId: sid } });
+  assert.equal(r.status, 200);
+
+  // max_uses=1: resgatar de novo falha.
+  r = await j('/api/redeem', { method: 'POST', body: { code } });
+  assert.equal(r.status, 401);
+});
+
+test('convite: código inválido, revogado e expirado retornam 401', async () => {
+  const t = await login('admin', 'senha-admin-123');
+  // Inválido.
+  let r = await j('/api/redeem', { method: 'POST', body: { code: 'NADA-NADA' } });
+  assert.equal(r.status, 401);
+
+  // Revogado.
+  r = await j('/api/admin/invites', { method: 'POST', token: t, body: { mode: 'game' } });
+  const code = r.data.code;
+  r = await j('/api/admin/invites/revoke', {
+    method: 'POST',
+    token: t,
+    body: { id: r.data.inviteId },
+  });
+  assert.equal(r.status, 200);
+  r = await j('/api/redeem', { method: 'POST', body: { code } });
+  assert.equal(r.status, 401);
+
+  // Expirado (validade mínima + espera).
+  r = await j('/api/admin/invites', {
+    method: 'POST',
+    token: t,
+    body: { mode: 'game', expiresInMin: 0.0001 },
+  });
+  const ecode = r.data.code;
+  await new Promise((res) => setTimeout(res, 40));
+  r = await j('/api/redeem', { method: 'POST', body: { code: ecode } });
+  assert.equal(r.status, 401);
+});
+
+test('convite: criar/listar exige admin (jogador negado)', async () => {
+  const tj = await login('jogadorx', 'senha-jogador-99');
+  let r = await j('/api/admin/invites', { method: 'POST', token: tj, body: { mode: 'game' } });
+  assert.equal(r.status, 403);
+  r = await j('/api/admin/invites', { token: tj });
+  assert.equal(r.status, 403);
+});
+
+test('login por senha fica no modo game (padrão) e prepare isola', async () => {
+  const t = await login('jogadorx', 'senha-jogador-99');
+  let r = await j('/api/session/reserve', { method: 'POST', token: t });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.mode, 'game');
+  const sid = r.data.sessionId;
+
+  r = await j('/api/session/prepare', { method: 'POST', token: t, body: { sessionId: sid } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.mode, 'game');
+
+  r = await j('/api/session/end', { method: 'POST', token: t, body: { sessionId: sid } });
+  assert.equal(r.status, 200);
+});
+
 async function login(username, password) {
   const r = await j('/api/login', { method: 'POST', body: { username, password } });
   return r.data.token;

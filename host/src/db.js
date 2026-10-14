@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS tokens (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   token_hash TEXT    NOT NULL UNIQUE,
+  mode       TEXT    NOT NULL DEFAULT 'game',  -- permissão concedida: game|full
   created_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
   revoked    INTEGER NOT NULL DEFAULT 0
@@ -57,10 +58,28 @@ CREATE TABLE IF NOT EXISTS sessions (
   ended_at      INTEGER,
   runtime_dir   TEXT,               -- diretório temporário da sessão
   unix_user     TEXT,               -- usuário Linux dedicado atribuído
+  mode          TEXT    NOT NULL DEFAULT 'game',  -- 'game' (isolado) | 'full' (PC completo)
   cleanup_ok    INTEGER,            -- NULL pendente, 1 ok, 0 falhou
   cleanup_notes TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+-- Códigos de convite: o operador gera no painel e envia ao jogador. O código é
+-- a credencial dele (em vez de usuário/senha) e carrega o MODO concedido.
+CREATE TABLE IF NOT EXISTS invite_codes (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  code       TEXT    NOT NULL UNIQUE,
+  mode       TEXT    NOT NULL DEFAULT 'game',   -- 'game' | 'full'
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  note       TEXT,
+  expires_at INTEGER,                           -- NULL = não expira
+  max_uses   INTEGER NOT NULL DEFAULT 1,
+  uses       INTEGER NOT NULL DEFAULT 0,
+  active     INTEGER NOT NULL DEFAULT 1,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_invite_code ON invite_codes(code);
 
 CREATE TABLE IF NOT EXISTS events_log (
   id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,8 +101,25 @@ export function getDb() {
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  migrate(db);
   ensureMachineRow(db);
   return db;
+}
+
+// Migra bancos criados antes da introdução do modo/convites. SQLite não altera
+// colunas via CREATE TABLE IF NOT EXISTS, então adicionamos se faltarem.
+function migrate(database) {
+  const has = (table, col) =>
+    database
+      .prepare(`PRAGMA table_info(${table})`)
+      .all()
+      .some((c) => c.name === col);
+  if (!has('tokens', 'mode')) {
+    database.exec("ALTER TABLE tokens ADD COLUMN mode TEXT NOT NULL DEFAULT 'game'");
+  }
+  if (!has('sessions', 'mode')) {
+    database.exec("ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'game'");
+  }
 }
 
 function ensureMachineRow(database) {
@@ -167,12 +203,12 @@ export function deleteUser(id) {
 
 // ---- Tokens -----------------------------------------------------------------
 
-export function insertToken({ userId, tokenHash, expiresAt }) {
+export function insertToken({ userId, tokenHash, expiresAt, mode = 'game' }) {
   const info = getDb()
     .prepare(
-      'INSERT INTO tokens (user_id, token_hash, created_at, expires_at, revoked) VALUES (?, ?, ?, ?, 0)'
+      'INSERT INTO tokens (user_id, token_hash, mode, created_at, expires_at, revoked) VALUES (?, ?, ?, ?, ?, 0)'
     )
-    .run(Number(userId), tokenHash, now(), Number(expiresAt));
+    .run(Number(userId), tokenHash, mode === 'full' ? 'full' : 'game', now(), Number(expiresAt));
   return Number(info.lastInsertRowid);
 }
 
@@ -246,13 +282,22 @@ export function setMachineState(state, detail = null, sessionId = null) {
 
 // ---- Sessões ---------------------------------------------------------------
 
-export function createSession({ userId, tokenId, runtimeDir, unixUser }) {
+export function createSession({ userId, tokenId, mode = 'game', runtimeDir, unixUser }) {
   const t = now();
   const info = getDb()
     .prepare(
-      'INSERT INTO sessions (user_id, token_id, state, created_at, updated_at, runtime_dir, unix_user) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO sessions (user_id, token_id, mode, state, created_at, updated_at, runtime_dir, unix_user) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     )
-    .run(Number(userId), tokenId ?? null, 'reserved', t, t, runtimeDir ?? null, unixUser ?? null);
+    .run(
+      Number(userId),
+      tokenId ?? null,
+      mode === 'full' ? 'full' : 'game',
+      'reserved',
+      t,
+      t,
+      runtimeDir ?? null,
+      unixUser ?? null
+    );
   return Number(info.lastInsertRowid);
 }
 
@@ -266,6 +311,7 @@ export function updateSession(id, patch) {
     endedAt: 'ended_at',
     runtimeDir: 'runtime_dir',
     unixUser: 'unix_user',
+    mode: 'mode',
     cleanupOk: 'cleanup_ok',
     cleanupNotes: 'cleanup_notes',
     tokenId: 'token_id',
@@ -323,4 +369,67 @@ export function listEvents(limit = 200) {
   return getDb()
     .prepare('SELECT * FROM events_log ORDER BY at DESC LIMIT ?')
     .all(Number(limit));
+}
+
+// ---- Códigos de convite ------------------------------------------------------
+//
+// O código É a credencial do jogador (ele não tem usuário/senha). Cada código
+// carrega o modo que concede ('game' isolado ou 'full' PC completo), validade e
+// limite de usos. Gerado no painel pelo operador e enviado ao jogador.
+
+export function createInvite({ code, mode = 'game', userId, note = null, expiresAt = null, maxUses = 1, createdBy = null }) {
+  const info = getDb()
+    .prepare(
+      'INSERT INTO invite_codes (code, mode, user_id, note, expires_at, max_uses, uses, active, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?)'
+    )
+    .run(
+      String(code),
+      mode === 'full' ? 'full' : 'game',
+      Number(userId),
+      note,
+      expiresAt == null ? null : Number(expiresAt),
+      Number(maxUses),
+      createdBy,
+      now()
+    );
+  return Number(info.lastInsertRowid);
+}
+
+export function findInviteByCode(code) {
+  return getDb().prepare('SELECT * FROM invite_codes WHERE code = ?').get(String(code));
+}
+
+export function getInvite(id) {
+  return getDb().prepare('SELECT * FROM invite_codes WHERE id = ?').get(Number(id));
+}
+
+export function listInvites(limit = 200) {
+  return getDb()
+    .prepare(
+      'SELECT i.*, u.username AS username FROM invite_codes i LEFT JOIN users u ON u.id = i.user_id ORDER BY i.id DESC LIMIT ?'
+    )
+    .all(Number(limit));
+}
+
+export function revokeInvite(id) {
+  const info = getDb()
+    .prepare('UPDATE invite_codes SET active = 0 WHERE id = ?')
+    .run(Number(id));
+  return info.changes > 0;
+}
+
+// Consome 1 uso do código de forma atômica e retorna true se o uso era válido
+// (ativo, não expirado e com usos restantes). Corrida entre dois redeem
+// simultâneos é resolvida pelo WHERE na própria atualização.
+export function consumeInvite(id) {
+  const info = getDb()
+    .prepare(
+      'UPDATE invite_codes SET uses = uses + 1 WHERE id = ? AND active = 1 AND (expires_at IS NULL OR expires_at > ?) AND uses < max_uses'
+    )
+    .run(Number(id), now());
+  return info.changes > 0;
+}
+
+export function countInvites() {
+  return getDb().prepare('SELECT COUNT(*) AS c FROM invite_codes').get().c;
 }

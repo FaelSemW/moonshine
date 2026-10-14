@@ -77,13 +77,14 @@ export function hashToken(token) {
   return createHash('sha256').update(token).digest('hex');
 }
 
-export function issueToken(userId) {
+export function issueToken(userId, mode = 'game') {
   const cfg = loadConfig();
   const token = newToken();
   const id = db.insertToken({
     userId,
     tokenHash: hashToken(token),
     expiresAt: db.now() + cfg.tokenTtlMs,
+    mode,
   });
   return { token, tokenId: id };
 }

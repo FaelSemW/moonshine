@@ -31,7 +31,9 @@ export class SessionError extends Error {
 const OPEN_STATES = ['reserved', 'preparing', 'active', 'ending', 'cleaning'];
 
 // Passo 2: reserva exclusiva da máquina. Retorna a sessão criada ou lança.
-export function reserveSession(user, tokenId) {
+// `mode` vem da permissão gravada no token ('game' isolado | 'full' PC completo),
+// nunca de entrada livre do cliente: o servidor decide.
+export function reserveSession(user, tokenId, mode = 'game') {
   const machine = db.getMachine();
   if (machine.state === 'locked') {
     throw new SessionError(
@@ -57,9 +59,13 @@ export function reserveSession(user, tokenId) {
   if (open) {
     throw new SessionError('Já existe uma sessão aberta.', 409, 'SESSION_OPEN');
   }
-  const sessionId = db.createSession({ userId: user.id, tokenId });
+  const sessionId = db.createSession({
+    userId: user.id,
+    tokenId,
+    mode: mode === 'full' ? 'full' : 'game',
+  });
   db.setMachineState('preparing', 'preparando ambiente', sessionId);
-  db.logEvent('info', 'sessão reservada', { sessionId, userId: user.id });
+  db.logEvent('info', 'sessão reservada', { sessionId, userId: user.id, mode });
   return { session: db.getSession(sessionId), resumed: false };
 }
 
@@ -68,23 +74,39 @@ export async function prepareSession(sessionId) {
   const cfg = loadConfig();
   let session = db.getSession(sessionId);
   if (!session) throw new SessionError('Sessão inexistente.', 404, 'NOT_FOUND');
+  const mode = session.mode === 'full' ? 'full' : 'game';
   db.updateSession(sessionId, { state: 'preparing' });
-  db.setMachineState('preparing', 'criando ambiente isolado', sessionId);
+  db.setMachineState(
+    'preparing',
+    mode === 'full' ? 'preparando PC completo' : 'criando ambiente isolado',
+    sessionId
+  );
 
   let env;
-  try {
-    env = await createSessionEnvironment(sessionId);
-  } catch (e) {
-    await failSession(sessionId, `falha ao criar ambiente: ${e.message}`);
-    throw new SessionError(`Falha ao preparar o ambiente: ${e.message}`, 500, 'ENV');
+  let lib = { exposed: false, reason: 'modo PC completo: sem biblioteca isolada' };
+  if (mode === 'full') {
+    // Modo PC completo: o jogador controla o desktop do dono — é o objetivo,
+    // então NÃO há isolamento de SO aqui (diferente do modo 'game'). A sessão
+    // continua rastreada e o streaming é confirmado antes de ativar.
+    env = { runtimeDir: null, unixUser: null, home: null, isolated: false, mode: 'full' };
+    db.logEvent('warn', 'sessão em modo PC completo (sem isolamento de SO)', {
+      sessionId,
+      userId: session.user_id,
+    });
+  } else {
+    try {
+      env = await createSessionEnvironment(sessionId);
+    } catch (e) {
+      await failSession(sessionId, `falha ao criar ambiente: ${e.message}`);
+      throw new SessionError(`Falha ao preparar o ambiente: ${e.message}`, 500, 'ENV');
+    }
+    db.updateSession(sessionId, {
+      runtimeDir: env.runtimeDir,
+      unixUser: env.unixUser,
+    });
+    lib = exposeLibraryReadonly(env, cfg.gameLibraryDir);
+    db.logEvent('info', 'biblioteca exposta', { sessionId, ...lib });
   }
-  db.updateSession(sessionId, {
-    runtimeDir: env.runtimeDir,
-    unixUser: env.unixUser,
-  });
-
-  const lib = exposeLibraryReadonly(env, cfg.gameLibraryDir);
-  db.logEvent('info', 'biblioteca exposta', { sessionId, ...lib });
 
   // Passo 5: streaming é iniciado pelo Moonlight real conectando no Sunshine.
   // Aqui confirmamos que o Sunshine está alcançável antes de marcar a sessão
@@ -101,10 +123,11 @@ export async function prepareSession(sessionId) {
 
   db.updateSession(sessionId, { state: 'active' });
   db.setMachineState('in-use', 'sessão ativa', sessionId);
-  db.logEvent('info', 'sessão ativa', { sessionId, userId: session.user_id });
+  db.logEvent('info', 'sessão ativa', { sessionId, userId: session.user_id, mode });
   return {
     session: db.getSession(sessionId),
     streamTarget: cfg.sunshineAddress,
+    mode,
     library: lib,
     isolation: { mode: env.mode, unixUser: env.unixUser, isolated: env.isolated },
   };
