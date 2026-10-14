@@ -1,10 +1,18 @@
 // Isolamento e descarte de sessões.
 //
 // Estratégia escolhida (documentada em docs/SECURITY.md): para cada sessão o
-// HOST usa um USUÁRIO LINUX DEDICADO (prefixo configurável, ex.: msplayer3).
-// O jogador nunca roda como o proprietário. O HOME do usuário dedicado é um
-// diretório temporário sob sessionRuntimeDir, descartado ao fim da sessão.
-// A biblioteca de jogos permanente é montada SOMENTE LEITURA para esse usuário.
+// HOST usa um USUÁRIO LINUX DEDICADO (prefixo configurável, ex.: msplayer-<hex>).
+// O HOME do usuário dedicado é um diretório temporário sob sessionRuntimeDir,
+// registrado como home em /etc/passwd e descartado ao fim da sessão. A
+// biblioteca permanente é exposta ao usuário da sessão como somente leitura.
+// No Bazzite as operações com root passam pelo helper restrito
+// (deploy/bazzite/moonshine-helper.sh + sudoers do install.sh).
+//
+// LIMITAÇÃO DE RUNTIME HONESTA (docs/SECURITY.md, fase 2): os apps/jogos do
+// Sunshine ainda são lançados na conta do proprietário — a identidade
+// isolada vale para os processos que o HOST cria sob o usuário dedicado.
+// Fazer o streaming rodar dentro da sessão do usuário dedicado é a próxima
+// fase; até lá o modo 'game' NÃO afirma isolamento de input em runtime.
 //
 // Propriedades de segurança:
 //  - O jogador não lê os arquivos pessoais do proprietário (usuário diferente,
@@ -22,10 +30,19 @@
 // do plano de controle, sem afirmar isolamento de SO.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { rmSync, mkdirSync, existsSync, chmodSync, lstatSync, readlinkSync } from 'node:fs';
+import {
+  rmSync,
+  mkdirSync,
+  existsSync,
+  chmodSync,
+  lstatSync,
+  readlinkSync,
+  accessSync,
+  constants,
+} from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { loadConfig } from './config.js';
+import { loadConfig, PROJECT_ROOT } from './config.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -67,10 +84,56 @@ function run(cmd, args, opts = {}) {
   return execFileAsync(cmd, args, { timeout: 15000, ...opts });
 }
 
+// ---------------------------------------------------------------- privilegio -
+// useradd/userdel/chown/pkill exigem root, mas o serviço roda como usuário
+// comum (systemd --user). O Bazzite usa um HELPER restrito autorizado via
+// sudoers: deploy/bazzite/moonshine-helper.sh + /etc/sudoers.d/moonshine-isolation
+// (instalados pelo install.sh com um único sudo). O helper valida todo
+// argumento por regex antes de qualquer comando — ele é o portão de root.
+//
+// Sem helper, os comandos são chamados direto: funciona apenas se o serviço
+// tiver privilégio por si (ou em testes como root).
+export function helperPath() {
+  if (process.platform !== 'linux') return null;
+  const cfg = loadConfig();
+  const p =
+    cfg.isolationHelper ||
+    resolve(PROJECT_ROOT, 'deploy', 'bazzite', 'moonshine-helper.sh');
+  try {
+    accessSync(p, constants.X_OK);
+    return p;
+  } catch {
+    return null;
+  }
+}
+
+// Executa uma operação no helper via `sudo -n` (nunca pede senha: ou a regra
+// sudoers existe, ou falha com instrução de correção). Retorna false quando
+// NÃO há helper — o chamador então usa o comando direto. Quando há helper e a
+// operação falha, lança IsolationError: não existe fallback silencioso, pois
+// esconderia a falta de privilégio até o prepare da sessão.
+async function runHelper(op, argv) {
+  const helper = helperPath();
+  if (!helper) return false;
+  try {
+    await run('sudo', ['-n', helper, op, ...argv]);
+    return true;
+  } catch (e) {
+    const detail = (e.stderr || e.message || '').trim();
+    throw new IsolationError(
+      `operação privilegiada "${op}" recusada: ${detail} ` +
+        '(verifique o sudoers /etc/sudoers.d/moonshine-isolation — rode o install.sh)',
+      'PRIV'
+    );
+  }
+}
+
 // Cria o usuário Linux dedicado se ainda não existir e retorna seu nome.
-// Usa useradd (ou adduser). Requer privilégio (o instalador roda com sudo ou o
-// serviço tem permissão via sudoers restrito a estes comandos).
-export async function ensureDedicatedUser(prefix) {
+// `home` é o HOME temporário da sessão (fica em /etc/passwd como home do
+// usuário — nada é criado em /home). Requer privilégio: no Bazzite passa pelo
+// helper + sudoers do install.sh (ver runHelper acima); sem helper, chama
+// useradd direto (só funciona com privilégio próprio).
+export async function ensureDedicatedUser(prefix, home) {
   const cfg = loadConfig();
   const base = prefix || cfg.dedicatedUserPrefix;
   // Procura um índice livre (base0, base1, ...). Por ora usamos um fixo por
@@ -78,6 +141,9 @@ export async function ensureDedicatedUser(prefix) {
   const name = `${base}-${randomBytes(3).toString('hex')}`.slice(0, 32);
   if (process.platform !== 'linux') {
     return { user: name, created: false, simulated: true };
+  }
+  if (!home || typeof home !== 'string') {
+    throw new IsolationError('ensureDedicatedUser: HOME temporário obrigatório', 'USER_CREATE');
   }
   try {
     await run('id', ['-u', name]);
@@ -87,17 +153,26 @@ export async function ensureDedicatedUser(prefix) {
     /* não existe */
   }
   try {
-    await run('useradd', [
-      '--create-home',
-      '--shell',
-      '/usr/sbin/nologin',
-      '--groups',
-      'games',
-      name,
-    ]);
+    const viaHelper = await runHelper('add', [name, home]);
+    if (!viaHelper) {
+      await run('useradd', [
+        '--create-home',
+        '--home-dir',
+        home,
+        '--shell',
+        '/usr/sbin/nologin',
+        '--groups',
+        'games',
+        name,
+      ]);
+    }
     return { user: name, created: true };
   } catch (e) {
-    throw new IsolationError(`falha ao criar usuário dedicado: ${e.message}`, 'USER_CREATE');
+    if (e instanceof IsolationError) throw e;
+    const hint = helperPath()
+      ? ''
+      : ' — helper de privilégio não encontrado (deploy/bazzite/moonshine-helper.sh); rode o install.sh';
+    throw new IsolationError(`falha ao criar usuário dedicado: ${e.message}${hint}`, 'USER_CREATE');
   }
 }
 
@@ -106,6 +181,15 @@ export async function removeDedicatedUser(name) {
   if (process.platform !== 'linux') return { removed: false, simulated: true };
   if (!/^[a-z0-9-]+$/.test(name)) {
     throw new IsolationError(`nome de usuário inválido: ${name}`, 'BAD_USERNAME');
+  }
+  if (helperPath()) {
+    // O helper já tenta `userdel --remove` e, em falha, `userdel` simples.
+    try {
+      await runHelper('del', [name]);
+      return { removed: true };
+    } catch (e) {
+      return { removed: false, error: e.message };
+    }
   }
   try {
     await run('userdel', ['--remove', name]);
@@ -132,18 +216,40 @@ export async function createSessionEnvironment(sessionId) {
 
   let unixUser = null;
   if (cfg.isolationMode === 'dedicated-user' && process.platform === 'linux') {
-    const { user } = await ensureDedicatedUser();
-    unixUser = user;
-    // HOME temporário do usuário dedicado.
+    // HOME temporário do usuário dedicado (é o que vai em /etc/passwd).
     const home = resolve(runtimeDir, 'home');
-    assertInside(runtimeDir, home);
-    mkdirSync(home, { recursive: true, mode: 0o700 });
     try {
-      await run('chown', ['-R', `${user}:${user}`, runtimeDir]);
+      assertInside(runtimeDir, home);
+      // Criamos com 0700 ANTES do useradd: ele preserva o modo do diretório
+      // já existente (com --create-home puro sairia 0755).
+      mkdirSync(home, { recursive: true, mode: 0o700 });
+      const { user } = await ensureDedicatedUser(undefined, home);
+      unixUser = user;
+      const viaHelper = await runHelper('chown', [user, runtimeDir]);
+      if (!viaHelper) {
+        await run('chown', ['-R', `${user}:${user}`, runtimeDir]);
+      }
+      return { runtimeDir, unixUser, home, isolated: true, mode: 'dedicated-user' };
     } catch (e) {
+      // Preparação falhou: desfaz o que já foi criado (usuário e diretório)
+      // para não deixar lixo de sessão que nem chegou a existir no banco.
+      if (unixUser) await removeDedicatedUser(unixUser);
+      try {
+        rmSync(runtimeDir, { recursive: true, force: true });
+      } catch {
+        // Pode ter ficado com dono da sessão: devolve ao serviço e tenta de novo.
+        if (unixUser) {
+          try {
+            await runHelper('release', [runtimeDir]);
+            rmSync(runtimeDir, { recursive: true, force: true });
+          } catch {
+            /* best-effort: o prepare já falhou; lixo sob sessionRuntimeDir */
+          }
+        }
+      }
+      if (e instanceof IsolationError) throw e;
       throw new IsolationError(`falha ao aplicar dono do ambiente: ${e.message}`, 'CHOWN');
     }
-    return { runtimeDir, unixUser, home, isolated: true, mode: 'dedicated-user' };
   }
 
   // Modos sem isolamento de SO (desenvolvimento): diretório temporário simples.
@@ -185,9 +291,22 @@ export async function discardSessionEnvironment(env) {
   // Encerra processos do usuário dedicado (se Linux) antes de remover arquivos.
   if (env.unixUser && process.platform === 'linux') {
     try {
-      await run('pkill', ['-KILL', '-u', env.unixUser]);
+      const viaHelper = await runHelper('kill', [env.unixUser]);
+      if (!viaHelper) {
+        await run('pkill', ['-KILL', '-u', env.unixUser]);
+      }
     } catch {
-      /* pkill retorna 1 se não há processos — ok */
+      /* pkill retorna 1 se não há processos — ok; via helper já sai em 0 */
+    }
+    // O diretório pertence ao usuário da sessão (chown na criação): devolve
+    // ao serviço para que a remoção canônica abaixo funcione. Sem isso o
+    // rmSync daria EACCES e a máquina travaria em limpeza incompleta.
+    try {
+      await runHelper('release', [env.runtimeDir]);
+    } catch (e) {
+      // A remoção abaixo vai falhar e o ciclo marcará limpeza incompleta
+      // (fail-safe: máquina bloqueada, nunca liberar com lixo para trás).
+      results.errors.push(`release ${env.runtimeDir}: ${e.message}`);
     }
   }
 

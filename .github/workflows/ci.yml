@@ -39,3 +39,5 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck -S warning deploy/bazzite/install.sh || true
           bash -n deploy/bazzite/install.sh
+          shellcheck -S warning deploy/bazzite/moonshine-helper.sh
+          bash -n deploy/bazzite/moonshine-helper.sh

@@ -27,8 +27,10 @@ dedicado dependem do hardware Bazzite (itens abaixo).
 ### Suíte automatizada
 
 - `npm run check` → sintaxe de todos os módulos OK.
-- `npm test` → **35/35 aprovados**.
-- CI GitHub Actions → verde (build + boot do HOST + shellcheck do instalador).
+- `npm test` → **39/39 aprovados** (no Windows 38 + 1 pulado por ser Linux;
+  na CI Linux rodam os 39, incluindo o ciclo real do helper).
+- CI GitHub Actions → verde (build + boot do HOST + shellcheck do instalador
+  **e do helper privilegiado**).
 
 ### Cliente Android — compila para APK (CI, 2026-10-14)
 
@@ -78,26 +80,52 @@ sucesso no GitHub Actions (mesma receita do upstream):
       máquina um dos dois falharia ao escutar).
 - [x] Painel: aba **Convites** (gerar/copiar/revogar) validado no navegador e
       **login por código** no web client (fluxo real no navegador).
-- [x] 35 testes automatizados passando (`npm test`).
+- [x] **Helper de isolamento** (`deploy/bazzite/moonshine-helper.sh`):
+      única porta de root do modo `game` (useradd/userdel/chown/pkill via
+      sudoers restrito). Toda entrada é validada por regex (exit 64 fora do
+      padrão) e o **ciclo real** — criar usuário dedicado → chown → release →
+      userdel → `verifyCleanup` limpo — roda como teste na **CI Linux**
+      (`tests/test-isolation-helper.js`).
+- [x] Descarte **devolve a propriedade** do diretório ao serviço (`release`)
+      antes do `rm` — sem isso o Linux daria EACCES e a máquina travaria.
+- [x] 39 testes automatizados passando (`npm test`).
 
 Procedimento para reproduzir: `npm test` e `npm start` nesta máquina.
 
 ## Pendente — HOST no Bazzite real
 
 - [ ] Instalação via `deploy/bazzite/install.sh` num Bazzite com GPU.
-      Procedimento: rodar no Desktop Mode, abrir `127.0.0.1:48100`, criar admin.
+      Procedimento: rodar no Desktop Mode, responder **ao único sudo**
+      (helper de isolamento), conferir `sudo -l | grep moonshine-helper`,
+      abrir `127.0.0.1:48100`, criar admin.
 - [ ] Sunshine Flatpak instalado, com permissão de GPU e codificação ativa.
       Procedimento: painel do Sunshine → verificar VA-API/NVENC; conferir se
       `/serverinfo` (47989) responde.
-- [ ] Criação real de usuário Linux dedicado (`useradd`) e descarte (`userdel`).
-      Procedimento: iniciar sessão como jogador, conferir `id msplayer-*` e que
-      o HOME temporário é descartado ao final.
+- [ ] Criação real de usuário Linux dedicado (`useradd`) e descarte (`userdel`)
+      **pelo helper/sudoers no Bazzite**. Procedimento: iniciar sessão como
+      jogador (modo `game`), conferir `id msplayer-*`,
+      `getent passwd msplayer-*` (HOME apontando para
+      `/var/tmp/moonshine-sessions/.../home`), `sudo -l` mostrando só o helper,
+      e que usuário + diretório somem ao final (`getent passwd | grep msplayer`
+      vazio, `/var/tmp/moonshine-sessions` vazio).
 - [ ] Isolamento real: jogador não lê arquivos do proprietário.
-      Procedimento: dentro da sessão, tentar `ls ~proprietário` e confirmar erro
-      de permissão; conferir permissões 0700 do HOME temporário.
+      ⚠ **Depende da fase 2 de runtime** (jogo/streaming rodando como o usuário
+      dedicado — ver `SECURITY.md` "Limites honestos"): hoje os apps do
+      Sunshine rodam na conta do dono. Até lá, validar o que já é real: HOME
+      temporário `0700` dono `msplayer-*` e que arquivos do dono não são
+      legíveis **para processos do usuário dedicado**
+      (`sudo -u msplayer-* ls ~dono` → erro de permissão).
 - [ ] Biblioteca de jogos somente-leitura de verdade.
       Procedimento: tentar gravar no diretório da biblioteca dentro da sessão.
 - [ ] Autostart do serviço via systemd --user após reboot.
+
+## Pendente — Fase 2 (runtime do modo `game`)
+
+- [ ] Streaming/jogo rodando **dentro da sessão do usuário dedicado** (ex.:
+      sessão Gamescope por sessão, Sunshine da sessão) para entregar o
+      isolamento de input prometido. Enquanto não existir, `SECURITY.md`
+      marca a limitação e o modo `game` não a afirma. Depois disso, o item
+      "Isolamento real" acima passa a ser testável como escrito.
 
 ## Pendente — Streaming real
 

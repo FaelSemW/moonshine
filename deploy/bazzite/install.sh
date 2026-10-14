@@ -14,6 +14,8 @@
 #  - Sunshine = Flatpak oficial (dev.lizardbyte.app.Sunshine) do Flathub.
 #  - Node.js = binário oficial em ~/.local (sem root).
 #  - Serviço = user unit do systemd (sem sudo no dia a dia).
+#  - UM sudo único e opcional: autoriza o helper de isolamento via sudoers
+#    (modo de jogo isolado). Recusar não quebra nada — só o modo "PC completo".
 #  - Tudo sob a home do usuário.
 #
 # Uso (no Desktop Mode do Bazzite):   bash install.sh
@@ -123,6 +125,50 @@ install_service() {
   ok "serviço moonshine-host habilitado e no ar"
 }
 
+# --------------------------------------------------- isolamento (privilegio) -
+# O modo de jogo isolado usa um usuário Linux por sessão e precisa de root
+# para criar/remover o usuário, dar dono ao diretório temporário e encerrar
+# processos da sessão. O serviço roda SEM root, então autorizamos o helper
+# restrito (moonshine-helper.sh — valida todo argumento por regex) via
+# /etc/sudoers.d. É o ÚNICO pedido de sudo desta instalação e é OPCIONAL:
+# recusar mantém o modo "PC completo" plenamente funcional.
+install_isolation_helper() {
+  local helper="$MOON_DIR/deploy/bazzite/moonshine-helper.sh"
+  [ -f "$helper" ] || { warn "helper de isolamento ausente ($helper)"; return 0; }
+  chmod +x "$helper"
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    warn "sudo ausente: modo de jogo isolado indisponível (PC completo ok)."
+    return 0
+  fi
+  info "Autorizando o helper de isolamento (um único sudo desta instalação)"
+  info "  → serve só para: useradd/userdel/chown/pkill da sessão de jogos"
+  if ! sudo -v; then
+    warn "sudo recusado: modo de jogo isolado indisponível (PC completo ok)."
+    return 0
+  fi
+
+  local rules="/etc/sudoers.d/moonshine-isolation"
+  local me; me="$(id -un)"
+  local tmp; tmp="$(mktemp)"
+  # Regra mínima: só este usuário, só ESTE script (a validação dos argumentos
+  # é feita dentro do helper — ele é o portão; o install.sh usa visudo -c).
+  printf '%s ALL=(root) NOPASSWD: "%s"\n' "$me" "$helper" > "$tmp"
+  if ! sudo visudo -cf "$tmp" >/dev/null 2>&1; then
+    rm -f "$tmp"
+    warn "regra sudoers inválida — helper não autorizado (PC completo ok)."
+    return 0
+  fi
+  sudo install -m 0440 "$tmp" "$rules"
+  rm -f "$tmp"
+  if ! sudo visudo -cf "$rules" >/dev/null 2>&1; then
+    sudo rm -f "$rules"
+    warn "validação final do sudoers falhou — helper não autorizado (PC completo ok)."
+    return 0
+  fi
+  ok "helper de isolamento autorizado ($rules)"
+}
+
 # -------------------------------------------------------------------- rede ----
 print_network() {
   info "Rede privada (recomendado — não exponha o painel na internet)"
@@ -138,6 +184,7 @@ main() {
   install_node
   install_sunshine || true
   install_deps
+  install_isolation_helper
   install_service
   print_network
 }

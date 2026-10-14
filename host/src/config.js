@@ -51,6 +51,12 @@ export const DEFAULT_CONFIG = {
   // Usuário Linux dedicado criado/uso para as sessões de jogadores.
   dedicatedUserPrefix: 'msplayer',
 
+  // Helper privilegiado do modo dedicated-user (sudoers restrito; ver
+  // deploy/bazzite/moonshine-helper.sh). Vazio = detecta o do repositório.
+  // IMPORTANTE: o helper fixa sessionRuntimeDir em /var/tmp/moonshine-sessions;
+  // mudar o diretório exige ajustar as regexes do helper.
+  isolationHelper: process.env.MOONSHINE_ISOLATION_HELPER || '',
+
   // Raiz de dados temporários de sessão (descartável).
   sessionRuntimeDir:
     process.env.MOONSHINE_SESSION_RUNTIME || '/var/tmp/moonshine-sessions',
@@ -137,8 +143,13 @@ export function validateConfig(cfg) {
   if (typeof cfg.bindHost !== 'string' || !cfg.bindHost) {
     throw new Error('bindHost inválido');
   }
-  if (!/^[a-z0-9-]+$/.test(cfg.dedicatedUserPrefix)) {
-    throw new Error('dedicatedUserPrefix deve ser [a-z0-9-]');
+  // Precisa começar com letra: o helper privilegiado (regex USER_RE) e o
+  // padrão POSIX de nome de usuário exigem isso.
+  if (!/^[a-z][a-z0-9-]{0,15}$/.test(cfg.dedicatedUserPrefix)) {
+    throw new Error('dedicatedUserPrefix deve começar com letra e ser [a-z0-9-]');
+  }
+  if (typeof cfg.isolationHelper !== 'string') {
+    throw new Error('isolationHelper deve ser uma string (caminho do helper ou vazio)');
   }
   if (!['dedicated-user', 'temp-home', 'none'].includes(cfg.isolationMode)) {
     throw new Error(`isolationMode inválido: ${cfg.isolationMode}`);

@@ -33,7 +33,7 @@ Requer Node.js 22.5+ (testado com 22.23.3). Sem dependências npm externas.
 
 ```sh
 npm start        # sobe em http://127.0.0.1:48100
-npm test         # 35 testes automatizados
+npm test         # 39 testes automatizados
 npm run check    # verificação de sintaxe
 ```
 
@@ -53,6 +53,11 @@ carrega o modo da sessão:
 - **full**: PC completo — o jogador passa a controlar o **desktop do dono**
   (o dono escolheu abrir a máquina; sem isolamento). Nos apps, o Moonlight
   entra no app **Desktop** do Sunshine.
+
+Limitação declarada (fase 2): os apps/jogos do Sunshine ainda são lançados na
+conta do dono — a identidade isolada, o HOME descartável e a limpeza verificada
+são reais; o isolamento de input completo vem com o runtime da fase 2
+(ver [docs/SECURITY.md](docs/SECURITY.md), "Limites honestos").
 
 O painel lista os códigos emitidos (modo, usos, validade, status) e permite
 **copiar** ou **revogar**. Nos **apps Android/Windows** o pareamento com o
@@ -75,13 +80,17 @@ node host/src/cli.js unlock                         # libera máquina travada
 
 ## Implantação no Bazzite
 
-Siga [docs/BAZZITE.md](docs/BAZZITE.md). **Um comando** no Desktop Mode do Bazzite (sem sudo):
+Siga [docs/BAZZITE.md](docs/BAZZITE.md). **Um comando** no Desktop Mode do Bazzite:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/FaelSemW/moonshine/main/deploy/bazzite/install.sh | bash
 ```
 
-Instala Node.js local (sem root), garante o Sunshine via Flatpak oficial, clona o código para `~/moonshine` e registra uma user unit do systemd. Nada altera a raiz imutável.
+Instala Node.js local (sem root), garante o Sunshine via Flatpak oficial, clona
+o código para `~/moonshine` e registra uma user unit do systemd. Nada altera a
+raiz imutável. Há **um único sudo, opcional**, no meio da instalação: autoriza
+o `moonshine-helper.sh` via sudoers (é o que cria/remove o usuário dedicado do
+modo `game`; recusar deixa só o modo `full` disponível).
 
 ## Arquitetura
 

@@ -19,14 +19,23 @@ Se algo falhar, o que enviar para eu corrigir está no final.
 
 ## Etapa 1 — Instalar o HOST na Bazzite
 
-No **Desktop Mode**, sem sudo:
+No **Desktop Mode**:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/FaelSemW/moonshine/main/deploy/bazzite/install.sh | bash
 ```
 
-**Esperado:** mensagens `OK` para Node.js, Sunshine e serviço. Ao final, o
-endereço do painel.
+No meio da instalação aparece **um único pedido de sudo**: autorizar o helper
+de isolamento (`moonshine-helper.sh`) — é o que permite criar/remover o
+usuário dedicado da sessão de jogo. Recusar não quebra a instalação: só o
+modo `game` fica indisponível (o modo `full` funciona normalmente).
+
+**Esperado:** mensagens `OK` para Node.js, Sunshine, **helper de isolamento
+autorizado** e serviço. Ao final, o endereço do painel. Confirme:
+
+```bash
+sudo -l | grep moonshine-helper   # deve listar .../deploy/bazzite/moonshine-helper.sh
+```
 
 ## Etapa 2 — Diagnóstico
 
@@ -109,7 +118,16 @@ node ~/moonshine/host/src/cli.js create-user jogador1 sua-senha-8
 3. Confira que o ambiente temporário foi descartado:
 
 ```bash
-ls -la /var/tmp/moonshine-sessions    # deve ficar vazio
+ls -la /var/tmp/moonshine-sessions                 # deve ficar vazio
+getent passwd | grep msplayer || echo "nenhum usuário de sessão restante"
+```
+
+**Esperado:** diretório vazio **e** nenhum `msplayer-*` em `/etc/passwd`. Se
+sobrar lixo de uma limpeza falha, recupere com:
+
+```bash
+sudo ~/moonshine/deploy/bazzite/moonshine-helper.sh release <dir>
+rm -rf <dir>
 ```
 
 4. Confira os registros: painel → aba **Registros** (eventos + tentativas de login).

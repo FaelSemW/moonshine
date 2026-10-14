@@ -11,13 +11,15 @@ isso.
 | Node.js | Binário oficial em `~/.local/bin` (sem root) | Roda o serviço de controle |
 | Sunshine | Flatpak oficial `dev.lizardbyte.app.Sunshine` | Servidor de streaming |
 | Serviço | User unit do systemd (`~/.config/systemd/user`) | Autostart sem sudo |
+| Helper de isolamento | `deploy/bazzite/moonshine-helper.sh` + `/etc/sudoers.d/moonshine-isolation` (único sudo, opcional) | Criar/remover o usuário da sessão no modo `game` |
 | Rede | Tailscale (Flatpak/binário) + Tailscale Serve | Acesso remoto privado |
 
 Nada disso altera a raiz imutável.
 
 ## Instalação (Desktop Mode)
 
-1. No terminal do Desktop Mode do Bazzite (sem sudo no comando principal), rode o instalador de um comando só — ele baixa o código para `~/moonshine` e instala tudo:
+1. No terminal do Desktop Mode do Bazzite, rode o instalador de um comando só —
+   ele baixa o código para `~/moonshine` e instala tudo:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/FaelSemW/moonshine/main/deploy/bazzite/install.sh | bash
@@ -27,13 +29,15 @@ curl -fsSL https://raw.githubusercontent.com/FaelSemW/moonshine/main/deploy/bazz
 
 O script:
 - instala Node.js local se ausente;
-2. O script:
-- instala Node.js local se ausente;
 - baixa o código para `~/moonshine`;
 - instala/ativa o Sunshine via Flatpak;
+- **pede um único sudo** para autorizar o helper de isolamento
+  (`/etc/sudoers.d/moonshine-isolation` — só o `moonshine-helper.sh` do
+  serviço é autorizado; recusar mantém tudo funcionando menos o modo `game`);
 - registra e habilita a user unit `moonshine-host.service`;
 - imprime instruções do Tailscale.
 
+2. Confirme o helper: `sudo -l | grep moonshine-helper`.
 3. Abra `http://127.0.0.1:48100` e crie o administrador.
 
 ## Sunshine no Bazzite
@@ -44,8 +48,9 @@ permissões** e fazer o pareamento:
 - Abra o Sunshine (Flatpak) e conclua o setup inicial (usuário/senha da Web UI).
 - O Moonshine pode ler o estado do Sunshine pela porta GameStream HTTP `47989`
   (endpoint `/serverinfo`), que **não** exige pareamento.
-- O pareamento do Moonlight com o Sunshine é feito pelo próprio Moonlight (PIN).
-  O Moonshine exibe/gerencia isso no painel, mas não substitui o pareamento.
+- **Pareamento:** com os **apps Moonshine** o PIN é gerado no app e entregue ao
+  HOST automaticamente (auto-pair, sem digitar nada); com Moonlight oficial o
+  PIN continua manual (exibido no painel, aba **Sunshine**).
 
 ### Permissões de GPU (AMD/NVIDIA/Intel)
 
@@ -85,12 +90,18 @@ novas sessões. Para recuperar:
 2. Aba **Estado** → **Liberar máquina** (ou `POST /api/admin/machine/unlock`).
 3. Confirme que verificou que nenhum dado sensível do jogador restou.
 
-Você também pode limpar manualmente:
+Você também pode limpar manualmente (o helper devolve a propriedade do
+diretório ao serviço para o `rm` funcionar):
 
 ```bash
 ls -la /var/tmp/moonshine-sessions   # deve ficar vazio entre sessões
+getent passwd | grep msplayer        # não deve sobrar usuário de sessão
+# se sobrou lixo de uma falha:
+sudo ~/moonshine/deploy/bazzite/moonshine-helper.sh release /var/tmp/moonshine-sessions/<dir>
+rm -rf /var/tmp/moonshine-sessions/<dir>
 # processos órfãos de uma sessão (se houver):
-ps -u msplayer-*                     # lista processos do usuário dedicado
+ps -u msplayer-XXXXXX                # lista processos do usuário dedicado
+sudo ~/moonshine/deploy/bazzite/moonshine-helper.sh kill msplayer-XXXXXX
 ```
 
 ### Reinstalação do serviço
@@ -107,6 +118,17 @@ totalmente (apaga usuários e sessões), pare o serviço e remova esse diretóri
 
 ## Limitações conhecidas (Bazzite)
 
+- **Modo `game` exige o sudo único do helper:** sem a regra
+  `/etc/sudoers.d/moonshine-isolation`, o prepare da sessão isolada falha com
+  mensagem clara; o modo `full` (PC completo) não é afetado. Revogar:
+  `sudo rm /etc/sudoers.d/moonshine-isolation`.
+- **Runtime do modo `game` (fase 2):** os apps/jogos do Sunshine ainda são
+  lançados na conta do dono — identidade isolada e limpeza são reais, mas o
+  isolamento de input completo depende da fase 2 (ver
+  [SECURITY.md](SECURITY.md) "Limites honestos").
+- **`sessionRuntimeDir` fixo no helper:** o `moonshine-helper.sh` só aceita
+  `/var/tmp/moonshine-sessions/...`; mudar a configuração exige ajustar as
+  regexes do helper.
 - O caminho **VFIO/GPU-passthrough** e a criação automática de ambiente com
   isolamento forte dependem de hardware e privilégios que **não foram validados**
   neste ambiente de desenvolvimento (Windows). Ver [ACCEPTANCE.md](ACCEPTANCE.md).
