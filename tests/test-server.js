@@ -255,6 +255,52 @@ test('login por senha fica no modo game (padrão) e prepare isola', async () => 
   assert.equal(r.status, 200);
 });
 
+test('auto-pair: app envia o PIN e o HOST repassa ao Sunshine (API oficial)', async () => {
+  const t = await login('admin', 'senha-admin-123');
+  let posted = null;
+  const PAIR_ID = '0123456789abcdef0123456789abcdef';
+  sunshine.__setConfigOverride((method, path, body) => {
+    if (method === 'GET' && path.startsWith('/api/pin')) {
+      return {
+        ok: true,
+        status: 200,
+        json: () => ({ pairings: [{ id: PAIR_ID, name: 'dev', address: '127.0.0.1' }] }),
+      };
+    }
+    if (method === 'POST' && path === '/api/pin') {
+      posted = body;
+      return { ok: true, status: 200, json: () => ({ status: 'ok' }) };
+    }
+    return { ok: true, status: 200, json: () => ({}) };
+  });
+  try {
+    // Sem token → 401.
+    let r = await j('/api/pair/pin', { method: 'POST', body: { pin: '1234' } });
+    assert.equal(r.status, 401);
+    // PIN fora do formato → 400.
+    r = await j('/api/pair/pin', { method: 'POST', token: t, body: { pin: '12' } });
+    assert.equal(r.status, 400);
+    // Fluxo feliz: 200 e o Sunshine recebe pairing_id + pin + name.
+    r = await j('/api/pair/pin', { method: 'POST', token: t, body: { pin: '1234', name: 'Moto G' } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.ok, true);
+    assert.deepEqual(posted, { pairing_id: PAIR_ID, pin: '1234', name: 'Moto G' });
+  } finally {
+    sunshine.__setConfigOverride(null);
+  }
+});
+
+test('auto-pair: sem pareamento pendente no Sunshine → 409', async () => {
+  const t = await login('admin', 'senha-admin-123');
+  sunshine.__setConfigOverride(() => ({ ok: true, status: 200, json: () => ({ pairings: [] }) }));
+  try {
+    const r = await j('/api/pair/pin', { method: 'POST', token: t, body: { pin: '5678' } });
+    assert.equal(r.status, 409);
+  } finally {
+    sunshine.__setConfigOverride(null);
+  }
+});
+
 async function login(username, password) {
   const r = await j('/api/login', { method: 'POST', body: { username, password } });
   return r.data.token;

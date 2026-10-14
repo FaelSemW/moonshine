@@ -238,6 +238,45 @@ async function handleApi(req, res, url) {
     });
   }
 
+  // Auto-pareamento: o app cliente (nosso Moonlight embutido) GERA o PIN e o
+  // envia para cá; nós o repassamos ao Sunshine pela API oficial (POST /api/pin).
+  // O jogador nunca digita nada — a "trava" do pareamento some para o usuário.
+  if (method === 'POST' && path === '/api/pair/pin') {
+    const a = requireAuth(req);
+    const body = await readJsonBody(req);
+    const pin = body && body.pin;
+    if (typeof pin !== 'string' || !/^\d{4}$/.test(pin)) {
+      throw new HttpError(400, 'PIN deve ter exatamente 4 dígitos');
+    }
+    if (rateLimit(`pairpin:${clientIp(req)}`, 10, 60_000)) {
+      throw new HttpError(429, 'muitas tentativas de pareamento. Aguarde um minuto.');
+    }
+    const status = await sunshine.readPairingStatus();
+    const pairings = status.pending?.pairings || [];
+    if (pairings.length === 0) {
+      throw new HttpError(409, 'nenhum pareamento pendente no Sunshine');
+    }
+    // Correlaciona pelo endereço que abriu o pareamento (o mesmo cliente que nos
+    // chamou); com um único pendente, usa ele. Vários sem match = ambíguo.
+    let target = pairings.find((p) => p.address && p.address === clientIp(req));
+    if (!target && pairings.length === 1) target = pairings[0];
+    if (!target) {
+      throw new HttpError(409, 'há vários pareamentos pendentes; repita o procedimento');
+    }
+    const name =
+      typeof body.name === 'string' && body.name.trim()
+        ? body.name.trim().slice(0, 64)
+        : 'moonshine-client';
+    const r = await sunshine.submitPin(target.id, pin, name);
+    if (!r.ok) throw new HttpError(502, `Sunshine recusou o PIN (HTTP ${r.status})`);
+    db.logEvent('info', 'pareamento concluído pelo app (auto-pair)', {
+      pairingId: target.id,
+      name,
+      userId: a.user.id,
+    });
+    return sendJson(res, 200, { ok: true, pairingId: target.id });
+  }
+
   // Logout (revoga o token atual).
   if (method === 'POST' && path === '/api/logout') {
     const a = requireAuth(req);

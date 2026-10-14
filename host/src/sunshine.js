@@ -77,6 +77,15 @@ async function configGet(path) {
 
 // Requisição genérica à config API usando o https nativo (aceita self-signed).
 function configRequest(method, path, body) {
+  if (configOverride) {
+    try {
+      return Promise.resolve(
+        configOverride(method, path, body) || { ok: true, status: 200, json: () => ({}) }
+      );
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }
   const creds = getSunshineCredentials();
   const auth = creds.username
     ? 'Basic ' +
@@ -126,6 +135,13 @@ export class SunshineError extends Error {
 let serverInfoOverride = null;
 export function __setServerInfoOverride(fn) {
   serverInfoOverride = fn;
+}
+
+// Ponto de injeção para testes da camada HTTPS da config API (pareamento etc.).
+// Recebe (method, path, body) e devolve { ok, status, json() }.
+let configOverride = null;
+export function __setConfigOverride(fn) {
+  configOverride = fn;
 }
 
 // Lê o estado do Sunshine via GameStream HTTP (sem TLS, sem cert de cliente).
