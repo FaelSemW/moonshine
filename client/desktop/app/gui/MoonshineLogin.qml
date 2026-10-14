@@ -32,7 +32,7 @@ Pane {
         TextField {
             id: urlField
             Layout.fillWidth: true
-            placeholderText: "http://192.168.0.10:47990"
+            placeholderText: "http://192.168.0.10:48100"
         }
 
         TextField {

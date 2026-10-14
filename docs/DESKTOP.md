@@ -19,7 +19,7 @@ entra na tela de PCs normal (pareamento na 1ª vez) e streaming. Tudo acontece
 ## Fluxo do jogador
 
 1. Abre o app → tela **Moonshine**: informa o endereço do HOST
-   (ex.: `http://192.168.0.10:47990`), usuário e senha de jogador.
+   (ex.: `http://192.168.0.10:48100`), usuário e senha de jogador.
 2. **Entrar** → reserva a sessão (**Jogar**) → prepara o ambiente no HOST.
 3. Na **1ª vez** o Moonlight pede o **pareamento** (PIN no painel do HOST →
    Sunshine). Escolhe o host e inicia o stream.

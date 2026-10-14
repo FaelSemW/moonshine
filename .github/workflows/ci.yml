@@ -26,8 +26,8 @@ jobs:
         run: |
           MOONSHINE_DATA_DIR="$RUNNER_TEMP/msdata" node host/src/index.js &
           sleep 2
-          curl -fsS http://127.0.0.1:47990/api/health
-          curl -fsS http://127.0.0.1:47990/api/setup-required
+          curl -fsS http://127.0.0.1:48100/api/health
+          curl -fsS http://127.0.0.1:48100/api/setup-required
 
   shellcheck:
     name: Validar instalador bash

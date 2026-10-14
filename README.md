@@ -32,12 +32,12 @@ streaming) e **Moonlight** (clientes), ambos GPL-3.0. Nenhum deles é reescrito.
 Requer Node.js 22.5+ (testado com 22.23.3). Sem dependências npm externas.
 
 ```sh
-npm start        # sobe em http://127.0.0.1:47990
+npm start        # sobe em http://127.0.0.1:48100
 npm test         # 29 testes automatizados
 npm run check    # verificação de sintaxe
 ```
 
-Abra `http://127.0.0.1:47990`, crie o administrador na primeira tela e use o
+Abra `http://127.0.0.1:48100`, crie o administrador na primeira tela e use o
 painel. Em Windows/macOS o HOST opera em modo de desenvolvimento (isolamento de
 SO desativado); ele **não** finge streaming.
 

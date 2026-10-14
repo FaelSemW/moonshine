@@ -12,7 +12,7 @@ embutido.
 
 ## Fluxo do jogador
 
-1. Abre o app, informa o **endereço do HOST** (ex.: `http://192.168.0.10:47990`,
+1. Abre o app, informa o **endereço do HOST** (ex.: `http://192.168.0.10:48100`,
    ou o IP Tailscale para jogar fora de casa).
 2. **Entrar** com o usuário/senha de jogador (criados no painel do HOST).
 3. **Jogar (reservar sessão)** — reserva e prepara a sessão no HOST.

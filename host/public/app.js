@@ -39,7 +39,7 @@ async function call(path, { method = 'GET', body } = {}) {
   });
   let data = {};
   try { data = await res.json(); } catch { /* vazio */ }
-  if (res.status === 401 && path !== '/api/login') {
+  if (res.status === 401 && path !== '/api/login' && path !== '/api/redeem') {
     logoutLocal();
     throw new Error('Sessão expirada. Entre novamente.');
   }
@@ -104,13 +104,19 @@ function screenLogin() {
   render(`
     <div class="card">
       <h2>Entrar</h2>
-      <p class="sub">Use sua conta da plataforma. <strong>Sua senha da Steam não é usada aqui.</strong></p>
+      <p class="sub">Use sua conta da plataforma ou um código de convite. <strong>Sua senha da Steam não é usada aqui.</strong></p>
       <form id="loginForm" class="stack">
         <label for="lu">Usuário</label>
         <input id="lu" autocomplete="username" required />
         <label for="lp">Senha</label>
         <input id="lp" type="password" autocomplete="current-password" required />
         <button class="btn" style="margin-top:18px">Entrar</button>
+      </form>
+      <div class="sub" style="margin:18px 0 8px;opacity:.7">— ou —</div>
+      <form id="redeemForm" class="stack">
+        <label for="lc">Código de convite</label>
+        <input id="lc" placeholder="XXXXX-XXXXX" autocomplete="off" spellcheck="false" />
+        <button class="btn secondary">Entrar com código</button>
       </form>
     </div>`);
   el('loginForm').onsubmit = async (e) => {
@@ -120,6 +126,18 @@ function screenLogin() {
       api.token = r.token; api.user = r.user;
       localStorage.setItem('ms_token', r.token);
       localStorage.setItem('ms_user', JSON.stringify(r.user));
+      toast(`Bem-vindo, ${r.user.username}.`, 'ok');
+      if (r.user.role === 'admin') screenAdmin(); else screenClient();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  el('redeemForm').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const r = await call('/api/redeem', { method: 'POST', body: { code: el('lc').value.trim() } });
+      api.token = r.token; api.user = r.user; api.mode = r.mode;
+      localStorage.setItem('ms_token', r.token);
+      localStorage.setItem('ms_user', JSON.stringify(r.user));
+      localStorage.setItem('ms_mode', r.mode || 'game');
       toast(`Bem-vindo, ${r.user.username}.`, 'ok');
       if (r.user.role === 'admin') screenAdmin(); else screenClient();
     } catch (err) { toast(err.message, 'error'); }
@@ -286,6 +304,7 @@ async function screenAdmin() {
         <button class="tab active" data-t="status">Estado</button>
         <button class="tab" data-t="setup">Configuração</button>
         <button class="tab" data-t="users">Jogadores</button>
+        <button class="tab" data-t="invites">Convites</button>
         <button class="tab" data-t="sunshine">Sunshine</button>
         <button class="tab" data-t="logs">Registros</button>
         <button class="tab" data-t="compat">Sistema</button>
@@ -309,6 +328,7 @@ async function adminTab(t) {
     if (t === 'status') return renderAdminStatus(body);
     if (t === 'setup') return renderAdminSetup(body);
     if (t === 'users') return renderAdminUsers(body);
+    if (t === 'invites') return renderAdminInvites(body);
     if (t === 'sunshine') return renderAdminSunshine(body);
     if (t === 'logs') return renderAdminLogs(body);
     if (t === 'compat') return renderAdminCompat(body);
@@ -479,6 +499,125 @@ async function renderAdminUsers(body) {
     try {
       await call('/api/admin/users', { method: 'POST', body: { username: el('nu').value.trim(), password: el('np').value, role: el('nr').value } });
       toast('Usuário criado.', 'ok'); renderAdminUsers(body);
+    } catch (err) { toast(err.message, 'error'); }
+  };
+}
+
+// Copiar para a área de transferência (com fallback: a API de clipboard exige
+// contexto seguro/HTTPS — em HTTP na rede local usamos o método legado).
+function copyText(txt) {
+  const fallback = () => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch { return false; }
+  };
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(txt)
+      .then(() => toast('Copiado.', 'ok'))
+      .catch(() => toast(fallback() ? 'Copiado.' : 'Não foi possível copiar.', fallback() ? 'ok' : 'error'));
+    return;
+  }
+  toast(fallback() ? 'Copiado.' : 'Não foi possível copiar.', fallback() ? 'ok' : 'error');
+}
+
+async function renderAdminInvites(body) {
+  const [r, u] = await Promise.all([call('/api/admin/invites'), call('/api/admin/users')]);
+  const players = u.users.filter((x) => x.role === 'player' && x.active);
+  const fmtDate = (ms) => (ms ? new Date(ms).toLocaleString() : 'nunca');
+  body.innerHTML = `
+    <div class="card">
+      <h2>Códigos de convite</h2>
+      <p class="sub">Gere um código e envie ao jogador — ele entra com o código, sem senha.
+        O <strong>modo</strong> é decidido aqui: <em>game</em> (sessão isolada, sem seus arquivos) ou
+        <em>full</em> (PC completo, a pessoa controla o desktop). Revogar o código corta o acesso.</p>
+      <form id="invForm" class="stack" style="margin-top:10px">
+        <label>Modo concedido</label>
+        <select id="im">
+          <option value="game">Game — sessão isolada (recomendado)</option>
+          <option value="full">PC completo — acesso total ao desktop</option>
+        </select>
+        <label>Vincular a jogador (opcional)</label>
+        <select id="iu">
+          <option value="">Criar jogador automaticamente</option>
+          ${players.map((p) => `<option value="${p.id}">${p.username}</option>`).join('')}
+        </select>
+        <div class="row">
+          <div style="flex:1"><label>Validade em minutos (vazio = nunca)</label><input id="ie" type="number" min="1" placeholder="nunca" /></div>
+          <div style="flex:1"><label>Usos máximos</label><input id="ix" type="number" min="1" max="1000" value="1" /></div>
+        </div>
+        <label>Nota (opcional)</label><input id="inote" maxlength="200" placeholder="ex.: aluno da turma B" />
+        <button class="btn" style="margin-top:14px">Gerar código</button>
+      </form>
+      <div id="newCode"></div>
+    </div>
+
+    <div class="card">
+      <h2>Códigos emitidos</h2>
+      <table class="table"><thead><tr><th>Código</th><th>Modo</th><th>Jogador</th><th>Usos</th><th>Validade</th><th>Status</th><th></th></tr></thead>
+      <tbody>${r.invites
+        .map((i) => {
+          const expired = i.expires_at != null && i.expires_at <= Date.now();
+          const used = i.uses >= i.max_uses;
+          const status = !i.active
+            ? '<span class="chip off">revogado</span>'
+            : expired
+              ? '<span class="chip off">expirado</span>'
+              : used
+                ? '<span class="chip off">esgotado</span>'
+                : '<span class="chip on">ativo</span>';
+          return `<tr>
+            <td><code>${i.code}</code></td>
+            <td>${i.mode === 'full' ? 'PC completo' : 'game'}</td>
+            <td>${i.username || '—'}</td>
+            <td>${i.uses}/${i.max_uses}</td>
+            <td>${fmtDate(i.expires_at)}</td>
+            <td>${status}</td>
+            <td style="text-align:right;white-space:nowrap">
+              <button class="btn ghost" data-copy="${i.code}">Copiar</button>
+              <button class="btn ghost" data-revoke="${i.id}" ${i.active ? '' : 'disabled'}>Revogar</button>
+            </td>
+          </tr>`;
+        })
+        .join('') || '<tr><td colspan="7">Nenhum convite emitido.</td></tr>'}</tbody></table>
+    </div>`;
+
+  body.querySelectorAll('[data-copy]').forEach((b) => (b.onclick = () => copyText(b.dataset.copy)));
+  body.querySelectorAll('[data-revoke]').forEach((b) => (b.onclick = async () => {
+    try {
+      await call('/api/admin/invites/revoke', { method: 'POST', body: { id: Number(b.dataset.revoke) } });
+      toast('Convite revogado.', 'ok');
+      renderAdminInvites(body);
+    } catch (err) { toast(err.message, 'error'); }
+  }));
+
+  el('invForm').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        mode: el('im').value,
+        maxUses: Number(el('ix').value) || 1,
+        note: el('inote').value.trim() || null,
+      };
+      const uid = el('iu').value;
+      if (uid) payload.userId = Number(uid);
+      const mins = el('ie').value;
+      if (mins) payload.expiresInMin = Number(mins);
+      const c = await call('/api/admin/invites', { method: 'POST', body: payload });
+      await renderAdminInvites(body); // atualiza a lista (já inclui o novo)
+      el('newCode').innerHTML = `
+        <div class="card" style="border-color:var(--accent);margin-top:14px">
+          <p class="sub">Código gerado — <strong>envie ao jogador</strong>:</p>
+          <p style="font-family:monospace;font-size:22px;letter-spacing:2px;margin:8px 0"><code>${c.code}</code></p>
+          <p class="sub">Modo: <strong>${c.mode === 'full' ? 'PC completo' : 'game'}</strong> · Jogador: ${c.username} · Usos: ${c.maxUses}${c.expiresAt ? ` · expira ${fmtDate(c.expiresAt)}` : ''}</p>
+          <button class="btn" id="copyNew">Copiar código</button>
+        </div>`;
+      el('copyNew').onclick = () => copyText(c.code);
+      toast('Convite criado.', 'ok');
     } catch (err) { toast(err.message, 'error'); }
   };
 }

@@ -130,7 +130,7 @@ print_network() {
   echo "    Depois use Tailscale Serve para HTTPS no endereço Tailscale."
   local ip; ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   echo
-  ok "Painel (após login): http://127.0.0.1:47990  ${ip:+ | rede: http://$ip:47990}"
+  ok "Painel (após login): http://127.0.0.1:48100  ${ip:+ | rede: http://$ip:48100}"
   echo "  Na primeira vez, crie o administrador pela interface."
 }
 

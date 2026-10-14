@@ -88,7 +88,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences("moonshine", MODE_PRIVATE);
-        api = new HostApi(prefs.getString("url", "http://192.168.0.10:47990"));
+        api = new HostApi(prefs.getString("url", "http://192.168.0.10:48100"));
         exec = Executors.newSingleThreadExecutor();
         main = new Handler(Looper.getMainLooper());
 

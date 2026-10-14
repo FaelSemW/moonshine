@@ -53,7 +53,7 @@ Sunshine). Ele garante o app "Desktop" e mostra como parear.
 
 ## Etapa 4 — Subir o painel e criar o administrador
 
-O serviço já está no ar. Abra `http://127.0.0.1:47990` (ou o endereço Tailscale).
+O serviço já está no ar. Abra `http://127.0.0.1:48100` (ou o endereço Tailscale).
 
 **Esperado:** tela **Configuração inicial** → crie o administrador.
 

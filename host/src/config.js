@@ -20,7 +20,9 @@ export const DATA_DIR =
 export const DEFAULT_CONFIG = {
   // Porta da API de controle. Fica atrás do Tailscale Serve na implantação
   // real; em desenvolvimento escuta em 127.0.0.1.
-  port: Number(process.env.MOONSHINE_PORT || 47990),
+  // 48100 e NÃO 47990: 47990 é a Web UI do Sunshine (base 47989 + 1) e os dois
+  // serviços rodam na mesma máquina — na mesma porta um falharia ao escutar.
+  port: Number(process.env.MOONSHINE_PORT || 48100),
   bindHost: process.env.MOONSHINE_BIND || '127.0.0.1',
 
   // Endereço do Sunshine usado pelo cliente Moonlight para streaming.

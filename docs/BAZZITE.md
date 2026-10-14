@@ -34,7 +34,7 @@ O script:
 - registra e habilita a user unit `moonshine-host.service`;
 - imprime instruções do Tailscale.
 
-3. Abra `http://127.0.0.1:47990` e crie o administrador.
+3. Abra `http://127.0.0.1:48100` e crie o administrador.
 
 ## Sunshine no Bazzite
 

@@ -73,7 +73,7 @@ Procedimento para reproduzir: `npm test` e `npm start` nesta máquina.
 ## Pendente — HOST no Bazzite real
 
 - [ ] Instalação via `deploy/bazzite/install.sh` num Bazzite com GPU.
-      Procedimento: rodar no Desktop Mode, abrir `127.0.0.1:47990`, criar admin.
+      Procedimento: rodar no Desktop Mode, abrir `127.0.0.1:48100`, criar admin.
 - [ ] Sunshine Flatpak instalado, com permissão de GPU e codificação ativa.
       Procedimento: painel do Sunshine → verificar VA-API/NVENC; conferir se
       `/serverinfo` (47989) responde.
