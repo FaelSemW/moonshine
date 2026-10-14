@@ -267,10 +267,9 @@ bool OnlineVpn::verifySignature(const QString& msiPath, QString* err)
     const QJsonValue status = o["Status"];
     // O PowerShell pode devolver o enum como número (2) ou como texto.
     const bool valid = (status.isDouble() && status.toInt(-1) == 2) ||
-                       (status.isString() &&
-                        status.toString().compare(QLatin1String("Valid"), Qt::CaseInsensitive) == 0);
+                       status.toString().compare(QStringLiteral("Valid"), Qt::CaseInsensitive) == 0;
     const QString signer = o["Signer"].toString();
-    if (!valid || !signer.contains(QLatin1String("Tailscale"), Qt::CaseInsensitive)) {
+    if (!valid || !signer.contains(QStringLiteral("Tailscale"), Qt::CaseInsensitive)) {
         *err = aviso;
         return false;
     }
@@ -436,10 +435,10 @@ void OnlineVpn::ensureOnline(const QString& authKey, const QString& controlUrl,
 #ifndef Q_OS_WIN
         // Sem elevação interativa fora do Windows: deixa a dica honesta.
         const bool semPermissao =
-            detail.contains(QLatin1String("permission"), Qt::CaseInsensitive) ||
-            detail.contains(QLatin1String("superuser"), Qt::CaseInsensitive) ||
-            detail.contains(QLatin1String("root"), Qt::CaseInsensitive) ||
-            detail.contains(QLatin1String("sudo"), Qt::CaseInsensitive);
+            detail.contains(QStringLiteral("permission"), Qt::CaseInsensitive) ||
+            detail.contains(QStringLiteral("superuser"), Qt::CaseInsensitive) ||
+            detail.contains(QStringLiteral("root"), Qt::CaseInsensitive) ||
+            detail.contains(QStringLiteral("sudo"), Qt::CaseInsensitive);
         if (semPermissao) {
             done(false, tr("No Linux/macOS, instale e ative o Tailscale do sistema "
                            "(ex.: sudo tailscale up) e tente de novo."));

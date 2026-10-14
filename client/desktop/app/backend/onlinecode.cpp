@@ -1,5 +1,7 @@
 #include "onlinecode.h"
 
+#include <QStringList> // Qt6: QStringList não vem embutido em QString
+
 namespace {
 
 // Alfabeto base32 de Crockford (sem I/L/O/U visuais — a leitura tolera
@@ -52,7 +54,7 @@ OnlineCode OnlineCode::parse(const QString& raw)
     OnlineCode oc;
 
     const QString s = raw.trimmed().toUpper();
-    if (!s.startsWith(QLatin1String("MS1-"))) {
+    if (!s.startsWith(QStringLiteral("MS1-"))) {
         return oc;
     }
 
@@ -118,7 +120,9 @@ OnlineCode OnlineCode::parse(const QString& raw)
     oc.controlUrl = QString::fromUtf8(b.constData() + p, ctrlLen);
 
     // O token volta ao formato clássico XXXXX-XXXXX (usado pelo resgate).
-    oc.token = token.left(5) + QLatin1Char('-') + token.mid(5);
+    oc.token = token.left(5);
+    oc.token += QLatin1Char('-');
+    oc.token += token.mid(5);
     oc.valid = true;
     return oc;
 }
@@ -129,13 +133,15 @@ bool isPrivateNetHost(const QString& host)
     if (parts.size() != 4) {
         return false;
     }
-    bool ok0 = false;
-    bool ok1 = false;
-    const int o0 = parts.at(0).toInt(&ok0);
-    const int o1 = parts.at(1).toInt(&ok1);
-    if (!ok0 || !ok1) {
-        return false;
+    // Precisa ser IPv4 de verdade (4 octetos 0..255) antes de tudo.
+    for (const QString& part : parts) {
+        bool ok = false;
+        const int v = part.toInt(&ok);
+        if (!ok || v < 0 || v > 255) {
+            return false;
+        }
     }
     // CGNAT 100.64.0.0/10 — o intervalo que o Tailscale usa (100.x).
-    return o0 == 100 && o1 >= 64 && o1 <= 127;
+    return parts.at(0).toInt() == 100 && parts.at(1).toInt() >= 64 &&
+           parts.at(1).toInt() <= 127;
 }
