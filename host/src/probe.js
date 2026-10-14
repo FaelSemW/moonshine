@@ -152,6 +152,24 @@ export function compatibilityReport() {
   return { ok, os: osInfo, gpu, resources: res, tooling, issues, notes };
 }
 
+// Prefixo do CLI do Tailscale: binário no PATH (padrão) ou Flatpak (no
+// Bazzite o Tailscale vem do Flathub e o CLI vive dentro do sandbox — usar
+// `flatpak run --command=tailscale com.tailscale.tailscale ...`). `via`
+// permite ao painel mostrar ao usuário o comando correto para o terminal.
+function tailscaleCli() {
+  if (run('which', ['tailscale'])) {
+    return { via: 'binary', cmd: 'tailscale', args: [] };
+  }
+  if (run('flatpak', ['info', 'com.tailscale.tailscale'])) {
+    return {
+      via: 'flatpak',
+      cmd: 'flatpak',
+      args: ['run', '--command=tailscale', 'com.tailscale.tailscale'],
+    };
+  }
+  return null;
+}
+
 // Detecta a interface/rede Tailscale e o IP 100.x usado para expor o HOST de
 // forma privada. Retorna o estado para o assistente de configuração do painel.
 export function detectTailscale() {
@@ -161,16 +179,22 @@ export function detectTailscale() {
     ip: null,
     iface: null,
     serveConfigured: false,
+    via: null,
+    cliPrefix: null,
     error: null,
   };
-  const which = run('which', ['tailscale']);
-  if (!which) {
+  const cli = tailscaleCli();
+  if (!cli) {
     out.error = 'tailscale não encontrado (instale via Flatpak ou binário)';
     return out;
   }
   out.installed = true;
+  out.via = cli.via;
+  out.cliPrefix = [cli.cmd, ...cli.args].join(' ');
+  // `flatpak run` tem custo de sandbox (~1s); damos mais folga no timeout.
+  const ts = (args) => run(cli.cmd, [...cli.args, ...args], cli.via === 'flatpak' ? 8000 : 4000);
   // IP do tailscale.
-  const ip = run('tailscale', ['ip', '-4']);
+  const ip = ts(['ip', '-4']);
   if (ip) {
     out.ip = ip.split('\n')[0].trim();
     out.running = true;
@@ -178,7 +202,7 @@ export function detectTailscale() {
     out.error = 'tailscale instalado mas sem IP (fora da rede?)';
   }
   // Status.
-  const status = run('tailscale', ['status', '--json']);
+  const status = ts(['status', '--json']);
   if (status) {
     try {
       const j = JSON.parse(status);
@@ -189,7 +213,7 @@ export function detectTailscale() {
     }
   }
   // tailscale serve: verifica se há config de serve (HTTPS).
-  const serve = run('tailscale', ['serve', 'status', '--json']);
+  const serve = ts(['serve', 'status', '--json']);
   if (serve) {
     try {
       const s = JSON.parse(serve);

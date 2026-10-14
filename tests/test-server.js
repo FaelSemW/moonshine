@@ -119,6 +119,20 @@ test('traversal de path estático é bloqueado', async () => {
   assert.ok(!txt.includes('"scripts"'), 'não deve expor package.json');
 });
 
+test('detectTailscale devolve diagnóstico estável (binário ou Flatpak)', async () => {
+  const probe = await import('../host/src/probe.js');
+  const ts = probe.detectTailscale();
+  assert.equal(typeof ts.installed, 'boolean');
+  if (ts.installed) {
+    assert.ok(['binary', 'flatpak'].includes(ts.via), `via inesperada: ${ts.via}`);
+    const esperado = ts.via === 'flatpak' ? 'flatpak run --command=tailscale' : 'tailscale';
+    assert.ok(ts.cliPrefix.startsWith(esperado), `cliPrefix: ${ts.cliPrefix}`);
+  } else {
+    assert.ok(ts.error, 'sem instalado deve explicar o erro');
+    assert.equal(ts.cliPrefix, null);
+  }
+});
+
 test('rota de pareamento valida PIN e pairingId', async () => {
   const t = await login('admin', 'senha-admin-123');
   // PIN inválido.

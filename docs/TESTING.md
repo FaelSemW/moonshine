@@ -161,7 +161,16 @@ código é recusado (401).
 1. Painel → aba **Configuração** → passo **3 · Rede para amigos (Tailscale)** →
    **Expor painel no IP Tailscale** (isso aponta painel **e Sunshine** ao IP
    100.x do Bazzite) → reinicie o serviço.
-2. No terminal do Bazzite: `tailscale serve --bg --https=443 http://127.0.0.1:48100`
+2. No terminal do Bazzite (o painel já mostra o comando com o prefixo certo —
+   Flatpak ou binário):
+
+```bash
+# Flatpak (padrão do Bazzite):
+flatpak run --command=tailscale com.tailscale.tailscale serve --bg --https=443 http://127.0.0.1:48100
+# Binário instalado no sistema:
+tailscale serve --bg --https=443 http://127.0.0.1:48100
+```
+
 3. Convide o amigo para a sua rede Tailscale; ele instala o Tailscale no
    celular/PC dele.
 4. No app dele: endereço `http://<ip-tailscale-do-bazzite>:48100` → **Entrar com

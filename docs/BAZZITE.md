@@ -70,8 +70,19 @@ Use o **Tailscale Serve** para expor o painel Moonshine com HTTPS no endereço
 Tailscale, e aponte o cliente para esse endereço. **Não** publique o painel na
 internet pública nem abra portas administrativas desnecessárias.
 
+O **CLI do Tailscale Flatpak** fica dentro do sandbox — prefixe com
+`flatpak run --command=tailscale com.tailscale.tailscale`:
+
+```bash
+flatpak run --command=tailscale com.tailscale.tailscale serve --bg --https=443 http://127.0.0.1:48100
+```
+
+O painel detecta as duas formas (binário ou Flatpak) e já exibe o comando com
+o prefixo certo no passo 3 do assistente.
+
 O streaming (Sunshine) usa as portas GameStream/vídeo/áudio/RTSP, que trafegam
-sobre a mesma rede privada.
+sobre a mesma rede privada (o passo 3 também aponta `sunshineAddress` ao IP
+Tailscale, para o Moonlight dos jogadores conectar de lá).
 
 ## Autostart
 

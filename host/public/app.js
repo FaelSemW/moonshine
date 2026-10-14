@@ -403,7 +403,7 @@ async function renderAdminSetup(body) {
       ${!ts.installed ? `<p class="sub" style="margin:10px 0 4px">Instale (Bazzite):</p><code style="display:block;background:var(--bg);padding:10px;border-radius:8px;font-size:12px">flatpak install -y flathub com.tailscale.tailscale</code>` : ''}
       ${ts.running && ts.ip && net.bindHost === '127.0.0.1' ? `
         <button class="btn" id="bindTs" style="margin-top:14px">Expor painel no IP Tailscale (${ts.ip})</button>` : ''}
-      ${ts.running ? `<p class="sub" style="margin:12px 0 0">Depois, no terminal do Bazzite, termine o HTTPS:</p><code style="display:block;background:var(--bg);padding:10px;border-radius:8px;font-size:12px">tailscale serve --bg --https=443 http://127.0.0.1:${net.port}</code><p class="sub" style="margin:6px 0 0">Amigos instalam Tailscale e você os convida. Depois abrem <strong>https://${ts.ip}</strong> (painel) — e no app Moonshine informam <strong>http://${ts.ip}:${net.port}</strong> — entrando com o <strong>código de convite</strong> gerado em "Convites".</p>` : ''}`)}
+      ${ts.running ? `<p class="sub" style="margin:12px 0 0">Depois, no terminal do Bazzite, termine o HTTPS:</p><code style="display:block;background:var(--bg);padding:10px;border-radius:8px;font-size:12px">${ts.cliPrefix || 'tailscale'} serve --bg --https=443 http://127.0.0.1:${net.port}</code><p class="sub" style="margin:6px 0 0">Amigos instalam Tailscale e você os convida. Depois abrem <strong>https://${ts.ip}</strong> (painel) — e no app Moonshine informam <strong>http://${ts.ip}:${net.port}</strong> — entrando com o <strong>código de convite</strong> gerado em "Convites".</p>` : ''}`)}
 
     <div class="card">
       <h2>4 · Amigos (código de convite)</h2>
