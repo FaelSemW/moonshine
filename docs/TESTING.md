@@ -181,6 +181,39 @@ internet pública (verifique em `tailscale status` que só a sua rede acessa).
 
 ---
 
+## Etapa 13 — Modo online embutido (VPN dentro dos apps)
+
+O dono configura **uma vez**; depois, o jogador usa **só o app Moonshine** —
+a VPN privada vai embutida nele (sem instalar Tailscale no celular/PC do
+jogador).
+
+1. No admin do Tailscale (`login.tailscale.com/admin/settings/keys`) →
+   **Generate auth key**: marque **expiração** (ex.: 90 dias) e a tag
+   `moonshine` (crie a tag no **Access Controls** e restrinja `tag:moonshine`
+   às portas do Sunshine — ver `SECURITY.md`).
+2. Painel → passo **3 · Rede** → bloco **VPN embutida nos apps (modo
+   online)** → cole a chave → **Salvar chave**. O painel passa a mostrar
+   "chave configurada" (o valor nunca volta a aparecer).
+3. Verifique a entrega da chave — ela só sai em `prepare`, com sessão de
+   jogador ativa (o app faz isso sozinho):
+
+```bash
+curl -s http://127.0.0.1:48100/api/session/prepare \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d "{\"sessionId\": $SID}"
+```
+
+   A resposta inclui `"online": {"authKey": "tskey-auth-...", "controlUrl":
+   null}`. Já `/api/admin/network` (painel) mostra apenas
+   `"configured": true` — nunca o valor.
+
+4. **Apps**: o suporte embutido (VPN subindo dentro do app Android/desktop ao
+   preparar a sessão) está em implementação — acompanhe em
+   `docs/ACCEPTANCE.md`. Quando disponível, o fluxo do jogador vira: abrir o
+   app → endereço + **código de convite** → jogar. Nada além do app.
+5. Desativar/rotacionar: painel → **Desativar modo online**, ou gere outra
+   chave no Tailscale e cole por cima (rotação).
+
 ## O que enviar se algo falhar
 
 Rode e me mande a saída:

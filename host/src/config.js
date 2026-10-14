@@ -39,6 +39,21 @@ export const DEFAULT_CONFIG = {
   sunshineConfigDir:
     process.env.MOONSHINE_SUNSHINE_CONFIG || join(DATA_DIR, 'sunshine'),
 
+  // ---- Modo online embutido (VPN privada nos apps dos jogadores) -----------
+  // Chave de autenticação da rede Tailscale do dono. Os APPS (Android e
+  // desktop) usam essa chave para entrar sozinhos na tailnet e alcançar o
+  // HOST — o jogador NÃO instala nem configura Tailscale: a VPN vai dentro
+  // do próprio app Moonshine. Vazio = recurso desativado.
+  // É um SECRETO: o dono gera no admin do Tailscale (com tag e expiração),
+  // o arquivo tem permissão 0600 e o valor só sai em /api/session/prepare
+  // (Bearer de sessão ativa) — nunca em estado público nem no painel (que
+  // vê apenas "configurada").
+  tailscaleAuthKey: process.env.MOONSHINE_TAILSCALE_KEY || '',
+
+  // URL de controle alternativa (ex.: Headscale auto-hospedado). Vazio =
+  // usar o serviço padrão de coordenação do Tailscale.
+  tailscaleControlUrl: process.env.MOONSHINE_TAILSCALE_CONTROL || '',
+
   // Aplicativo padrão iniciado pelo Sunshine quando a sessão sobe.
   streamAppName: 'Desktop',
 
@@ -153,6 +168,16 @@ export function validateConfig(cfg) {
   }
   if (!['dedicated-user', 'temp-home', 'none'].includes(cfg.isolationMode)) {
     throw new Error(`isolationMode inválido: ${cfg.isolationMode}`);
+  }
+  // Modo online embutido: a chave é segredo em texto (chave de rede do dono).
+  if (typeof cfg.tailscaleAuthKey !== 'string' || cfg.tailscaleAuthKey.length > 256) {
+    throw new Error('tailscaleAuthKey deve ser string (até 256 caracteres)');
+  }
+  if (
+    cfg.tailscaleControlUrl &&
+    !/^https?:\/\/[A-Za-z0-9.:-]{3,255}$/.test(cfg.tailscaleControlUrl)
+  ) {
+    throw new Error('tailscaleControlUrl inválida (http(s)://host[:porta])');
   }
   return true;
 }

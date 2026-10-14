@@ -332,6 +332,10 @@ async function handleApi(req, res, url) {
         streamTarget: r.streamTarget,
         isolation: r.isolation,
         library: r.library,
+        // Modo online embutido: credencial da rede privada para o APP subir a
+        // VPN embutida e alcançar streamTarget (100.x). Só aqui, sob Bearer
+        // de sessão ativa — nunca em estado público nem no painel.
+        online: onlineConfig(),
       });
     } catch (e) {
       if (e instanceof session.SessionError) throw new HttpError(e.status, e.message);
@@ -559,6 +563,8 @@ async function handleAdmin(req, res, url, sub) {
       port: cfg.port,
       tailscale: detectTailscale(),
       sunshineAddress: cfg.sunshineAddress,
+      // Modo online embutido: só a EXISTÊNCIA da chave — nunca o valor.
+      online: { configured: !!cfg.tailscaleAuthKey, controlUrl: cfg.tailscaleControlUrl || null },
     });
   }
   if (sub === 'network' && method === 'POST') {
@@ -577,11 +583,49 @@ async function handleAdmin(req, res, url, sub) {
       }
       patch.sunshineAddress = body.sunshineAddress;
     }
+    // Modo online embutido: chave da rede privada (segredo do dono).
+    if (body.tailscaleAuthKey !== undefined) {
+      if (typeof body.tailscaleAuthKey !== 'string' || body.tailscaleAuthKey.length > 256) {
+        throw new HttpError(400, 'chave da rede inválida (string até 256 caracteres)');
+      }
+      // Remove espaços de copiar/colar; string vazia desativa o modo online.
+      patch.tailscaleAuthKey = body.tailscaleAuthKey.trim();
+    }
+    if (body.tailscaleControlUrl !== undefined) {
+      const v = String(body.tailscaleControlUrl).trim();
+      if (v && !/^https?:\/\/[A-Za-z0-9.:-]{3,255}$/.test(v)) {
+        throw new HttpError(400, 'URL de controle inválida (http(s)://host[:porta])');
+      }
+      patch.tailscaleControlUrl = v;
+    }
+    const needsRestart = patch.bindHost !== undefined || patch.port !== undefined;
     if (Object.keys(patch).length) saveConfig(patch);
-    return sendJson(res, 200, { ok: true, requiresRestart: true, config: loadConfig() });
+    const cfg = loadConfig({ reload: true });
+    // Nunca ecoar segredos (senha do Sunshine, chave da rede): só a visão
+    // segura que o painel precisa.
+    return sendJson(res, 200, {
+      ok: true,
+      requiresRestart: needsRestart,
+      view: {
+        bindHost: cfg.bindHost,
+        port: cfg.port,
+        sunshineAddress: cfg.sunshineAddress,
+        online: { configured: !!cfg.tailscaleAuthKey, controlUrl: cfg.tailscaleControlUrl || null },
+      },
+    });
   }
 
   throw new HttpError(404, 'rota administrativa não encontrada');
+}
+
+// Credencial do modo online embutido (VPN Tailscale dentro dos apps). A chave
+// É o acesso à rede privada do dono: entregue somente em prepare, sob Bearer
+// de sessão ativa. O painel admin nunca recebe o valor (só "configurada") e a
+// chave não é logada. O dono gera/revoga no admin do Tailscale.
+function onlineConfig() {
+  const cfg = loadConfig();
+  if (!cfg.tailscaleAuthKey) return null;
+  return { authKey: cfg.tailscaleAuthKey, controlUrl: cfg.tailscaleControlUrl || null };
 }
 
 function publicState() {

@@ -50,6 +50,23 @@ exatos estão registrados abaixo para rastreabilidade.
   fixado no SHA público acima. O `applicationId` do Android foi trocado para
   `com.moonshine.client` (pedido explícito dos mantenedores do Moonlight).
 
+## Tailscale (rede privada / VPN embutida)
+
+- Repositório: https://github.com/tailscale/tailscale — **BSD-3-Clause**
+  (cliente; alguns recursos de servidor/coordenação têm termos próprios)
+- Uso neste projeto: **modo online embutido** — o HOST guarda a chave de
+  autenticação da rede do dono e a entrega (em `prepare` autenticado) aos
+  **apps dos jogadores**, que incorporam o cliente Tailscale para entrar
+  sozinhos na rede privada (sem app de VPN separado no dispositivo do
+  jogador). A coordenação da rede usa o serviço do Tailscale (conta do dono);
+  URL de controle alternativa (Headscale auto-hospedado) é suportada no
+  config. Incorporação dos clientes: fase em implementação.
+- Obrigações: BSD-3-Clause é compatível com GPL-3 (incorporação permitida com
+  atribuição — `THIRD_PARTY.md` e créditos dos apps). **Marca**: "Tailscale" e
+  logotipo são marcas; nos apps o recurso aparece como "modo online"/"VPN
+  privada", sem usar o nome como nome do produto. Plano gratuito do Tailscale
+  tem limites de usuários/dispositivos — verifique os atuais no site deles.
+
 ## Licença deste projeto
 
 O código-fonte próprio do Moonshine Cloud Gaming é publicado sob **GPL-3.0-only**

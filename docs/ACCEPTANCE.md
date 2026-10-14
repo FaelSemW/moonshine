@@ -88,7 +88,14 @@ sucesso no GitHub Actions (mesma receita do upstream):
       (`tests/test-isolation-helper.js`).
 - [x] Descarte **devolve a propriedade** do diretório ao serviço (`release`)
       antes do `rm` — sem isso o Linux daria EACCES e a máquina travaria.
-- [x] 39 testes automatizados passando (`npm test`).
+- [x] 41 testes automatizados passando (`npm test`).
+- [x] **Modo online embutido (HOST)**: chave da rede privada (Tailscale) salva
+      no painel sem ecoar o segredo; entrega **apenas** em
+      `/api/session/prepare` sob Bearer de sessão; painel admin vê só
+      `configured: true`; desativar limpa o acesso (`npm test`).
+- [x] **Detecção do Tailscale aceita o CLI do Flatpak** (Bazzite):
+      `flatpak run --command=tailscale com.tailscale.tailscale ...`; o painel
+      exibe o comando com o prefixo correto.
 
 Procedimento para reproduzir: `npm test` e `npm start` nesta máquina.
 
@@ -151,6 +158,15 @@ Procedimento para reproduzir: `npm test` e `npm start` nesta máquina.
       streaming real. Procedimento: ver `docs/DESKTOP.md`.
 - [ ] Linux: mesmo código do cliente desktop; empacotar (.AppImage/.deb) e
       validar em distro real.
+- [ ] **VPN embutida nos apps (modo online)**: incorporar o cliente Tailscale
+      nos apps Android (VpnService + biblioteca oficial) e Windows/Linux
+      (binários/userspace + elevação única) para que o jogador entre na rede
+      privada do dono **sem instalar Tailscale**, usando a chave entregue em
+      `prepare`. Procedimento: com chave configurada no painel, abrir o app em
+      rede externa (só internet), entrar com convite e confirmar que o
+      streaming alcança o HOST (ping ao `streamTarget` 100.x + streaming ativo).
+      O lado do HOST (chave, entrega em `prepare`, painel) já está pronto e
+      coberto por teste.
 
 ## Como cada pendência será confirmada
 

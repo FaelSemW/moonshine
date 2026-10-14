@@ -171,6 +171,49 @@ test('rede: GET mostra bind e Tailscale; POST valida bindHost', async () => {
   assert.equal(r.data.requiresRestart, true);
 });
 
+test('modo online embutido: chave da rede vai só para prepare autenticado', async () => {
+  const t = await login('admin', 'senha-admin-123');
+
+  // Admin salva a chave; a resposta não pode ecoar o segredo.
+  let r = await j('/api/admin/network', {
+    method: 'POST',
+    token: t,
+    body: { tailscaleAuthKey: 'tskey-auth-teste123' },
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.view.online.configured, true);
+  assert.ok(!JSON.stringify(r.data).includes('tskey-auth-teste123'), 'POST não pode ecoar a chave');
+
+  // GET admin mostra só a existência, nunca o valor.
+  r = await j('/api/admin/network', { token: t });
+  assert.equal(r.data.online.configured, true);
+  assert.ok(!JSON.stringify(r.data).includes('tskey-auth-teste123'), 'GET não pode entregar a chave');
+
+  // Jogador: prepare entrega a chave para o APP subir a VPN embutida.
+  await j('/api/admin/users', {
+    method: 'POST',
+    token: t,
+    body: { username: 'onlinep', password: 'senha-online-1', role: 'player' },
+  });
+  const pt = await login('onlinep', 'senha-online-1');
+  r = await j('/api/session/reserve', { method: 'POST', token: pt });
+  const sid = r.data.sessionId;
+  r = await j('/api/session/prepare', { method: 'POST', token: pt, body: { sessionId: sid } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.online?.authKey, 'tskey-auth-teste123');
+  await j('/api/session/end', { method: 'POST', token: pt, body: { sessionId: sid } });
+
+  // Desativa: prepare volta a entregar null.
+  r = await j('/api/admin/network', { method: 'POST', token: t, body: { tailscaleAuthKey: '' } });
+  assert.equal(r.data.view.online.configured, false);
+  const pt2 = await login('onlinep', 'senha-online-1');
+  r = await j('/api/session/reserve', { method: 'POST', token: pt2 });
+  const sid2 = r.data.sessionId;
+  r = await j('/api/session/prepare', { method: 'POST', token: pt2, body: { sessionId: sid2 } });
+  assert.equal(r.data.online, null);
+  await j('/api/session/end', { method: 'POST', token: pt2, body: { sessionId: sid2 } });
+});
+
 test('convite: criar → resgatar → modo full na sessão (PC completo)', async () => {
   const t = await login('admin', 'senha-admin-123');
   // Cria convite modo full, 1 uso.

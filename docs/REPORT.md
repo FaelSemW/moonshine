@@ -19,7 +19,7 @@ Ambiente de desenvolvimento: Windows 11, Node.js 22.23.3, sem Python/Java/CMake/
 >   pkill do modo `game` funcionam sob `systemd --user`; ciclo real coberto por
 >   teste na CI Linux. Limitação honesta de runtime (jogo ainda roda na conta do
 >   dono até a fase 2) em `SECURITY.md`.
-> - **39 testes** automatizados (`npm test`).
+> - **39 → 41 testes** automatizados (`npm test`).
 
 ## 1. O que foi implementado (funcional e testado)
 

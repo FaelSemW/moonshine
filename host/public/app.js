@@ -403,7 +403,23 @@ async function renderAdminSetup(body) {
       ${!ts.installed ? `<p class="sub" style="margin:10px 0 4px">Instale (Bazzite):</p><code style="display:block;background:var(--bg);padding:10px;border-radius:8px;font-size:12px">flatpak install -y flathub com.tailscale.tailscale</code>` : ''}
       ${ts.running && ts.ip && net.bindHost === '127.0.0.1' ? `
         <button class="btn" id="bindTs" style="margin-top:14px">Expor painel no IP Tailscale (${ts.ip})</button>` : ''}
-      ${ts.running ? `<p class="sub" style="margin:12px 0 0">Depois, no terminal do Bazzite, termine o HTTPS:</p><code style="display:block;background:var(--bg);padding:10px;border-radius:8px;font-size:12px">${ts.cliPrefix || 'tailscale'} serve --bg --https=443 http://127.0.0.1:${net.port}</code><p class="sub" style="margin:6px 0 0">Amigos instalam Tailscale e você os convida. Depois abrem <strong>https://${ts.ip}</strong> (painel) — e no app Moonshine informam <strong>http://${ts.ip}:${net.port}</strong> — entrando com o <strong>código de convite</strong> gerado em "Convites".</p>` : ''}`)}
+      ${ts.running ? `<p class="sub" style="margin:12px 0 0">Depois, no terminal do Bazzite, termine o HTTPS:</p><code style="display:block;background:var(--bg);padding:10px;border-radius:8px;font-size:12px">${ts.cliPrefix || 'tailscale'} serve --bg --https=443 http://127.0.0.1:${net.port}</code><p class="sub" style="margin:6px 0 0">Amigos instalam Tailscale e você os convida. Depois abrem <strong>https://${ts.ip}</strong> (painel) — e no app Moonshine informam <strong>http://${ts.ip}:${net.port}</strong> — entrando com o <strong>código de convite</strong> gerado em "Convites".</p>` : ''}
+
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+        <h2 style="font-size:15px;margin:0 0 4px">VPN embutida nos apps (modo online)</h2>
+        <p class="sub" style="margin:0 0 8px">Cole a chave da sua rede Tailscale para que os <strong>apps dos jogadores</strong> entrem nela sozinhos: eles <strong>não instalam nem configuram Tailscale</strong> — a VPN vai dentro do próprio app Moonshine. Só o <strong>código de convite</strong> basta.</p>
+        <div class="kv">
+          <span class="k">Modo online</span><span class="v">${net.online?.configured ? '<span class="chip on">chave configurada</span>' : '<span class="chip off">desativado</span>'}</span>
+          <span class="k">URL de controle</span><span class="v">${net.online?.controlUrl || 'padrão do Tailscale'}</span>
+        </div>
+        <input type="password" id="onlineKey" placeholder="${net.online?.configured ? '•••••••• (já configurada — cole outra para trocar)' : 'tskey-auth-...'}" style="width:100%;margin-top:10px">
+        <input type="text" id="onlineControl" placeholder="URL de controle alternativa (opcional — vazio = padrão)" value="${net.online?.controlUrl || ''}" style="width:100%;margin-top:8px">
+        <div class="row" style="margin-top:10px">
+          <button class="btn" id="saveOnlineKey">Salvar chave</button>
+          ${net.online?.configured ? '<button class="btn secondary" id="clearOnlineKey">Desativar modo online</button>' : ''}
+        </div>
+        <p class="sub" style="margin:10px 0 0">Gere em <strong>login.tailscale.com/admin/settings/keys</strong> → <em>Generate auth key</em>, com <strong>tag moonshine</strong> e expiração (ex.: 90 dias). Recomendado no <strong>Access Controls</strong> do tailnet: restrinja <code>tag:moonshine</code> às portas do Sunshine (47989, 47984, 47998-48000, 48010) para jogadores não enxergarem seus outros dispositivos.</p>
+      </div>`)}
 
     <div class="card">
       <h2>4 · Amigos (código de convite)</h2>
@@ -433,6 +449,22 @@ async function renderAdminSetup(body) {
       body: { bindHost: ts.ip, sunshineAddress: `${ts.ip}:47989` },
     });
     toast('Painel e Sunshine apontados para o Tailscale. Reinicie o serviço para aplicar.', 'ok');
+    renderAdminSetup(body);
+  });
+  b('saveOnlineKey', async () => {
+    const key = el('onlineKey').value.trim();
+    const ctrl = el('onlineControl').value.trim();
+    if (!key) { toast('Cole a chave da rede (tskey-auth-...).', 'error'); return; }
+    await call('/api/admin/network', {
+      method: 'POST',
+      body: { tailscaleAuthKey: key, tailscaleControlUrl: ctrl },
+    });
+    toast('Modo online ativado: os apps dos jogadores entram sozinhos na rede privada.', 'ok');
+    renderAdminSetup(body);
+  });
+  b('clearOnlineKey', async () => {
+    await call('/api/admin/network', { method: 'POST', body: { tailscaleAuthKey: '' } });
+    toast('Modo online desativado.', 'ok');
     renderAdminSetup(body);
   });
   b('goInvites', () => {

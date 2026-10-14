@@ -80,6 +80,15 @@ flatpak run --command=tailscale com.tailscale.tailscale serve --bg --https=443 h
 O painel detecta as duas formas (binário ou Flatpak) e já exibe o comando com
 o prefixo certo no passo 3 do assistente.
 
+### VPN embutida nos apps dos jogadores (modo online)
+
+Depois da rede ativa, gere uma **auth key** em
+`login.tailscale.com/admin/settings/keys` (com tag `moonshine` e expiração) e
+cole no painel (passo 3 → **VPN embutida nos apps**). Os apps Moonshine
+(Android/desktop) usam essa chave para entrar sozinhos na rede privada — o
+jogador **não instala Tailscale**. Restrinja `tag:moonshine` no ACL às portas
+do Sunshine (ver `SECURITY.md`).
+
 O streaming (Sunshine) usa as portas GameStream/vídeo/áudio/RTSP, que trafegam
 sobre a mesma rede privada (o passo 3 também aponta `sunshineAddress` ao IP
 Tailscale, para o Moonlight dos jogadores conectar de lá).

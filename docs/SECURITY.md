@@ -143,6 +143,51 @@ arriscar vazar dados entre jogadores.
   Sunshine (`POST /api/pin`). O jogador não digita nem vê o PIN nos apps. Sem
   sessão Moonshine o fluxo volta ao oficial (PIN exibido/digitação no painel).
 
+## VPN privada embutida nos apps (modo online)
+
+Para jogadores de fora da rede local, o dono usa **sua própria rede Tailscale**
+(privada; nada na internet pública). O **modo online embutido** leva essa VPN
+para **dentro dos apps dos jogadores**: o jogador instala **só o app
+Moonshine** — nem Tailscale, nem login de VPN.
+
+Funcionamento:
+
+- O dono gera uma **chave de autenticação** da rede (admin do Tailscale) e cola
+  no painel (passo 3). A chave fica em `config.json` (**permissão 0600**, só o
+  dono lê) e é usada pelos apps para entrar sozinhos na rede privada.
+- A chave **só** é entregue em `POST /api/session/prepare`, sob **Bearer de
+  sessão ativa** (jogador autenticado com convite/reserva). O painel
+  administrativo vê apenas `configured: true` — **nunca** o valor; nada é
+  logado; o POST de configuração não ecoa o segredo (visão segura).
+- O dono **revoga/rotaciona** a qualquer momento: gerar nova chave no
+  Tailscale (ou remover a atual) e substituir/remover no painel. Convite
+  revogado não recebe mais nada, mesmo com a chave válida — são camadas
+  independentes.
+
+Regras do dono (obrigatórias para o risco ficar controlado):
+
+- **Tag + expiração:** gere a chave com a tag `moonshine` e expiração curta
+  (ex.: 90 dias). Chave sem expiração vive para sempre — trate-a como senha.
+- **ACL restritiva (crítico):** sem restrição, qualquer dispositivo com a
+  chave alcança **toda** a rede do dono (outros PCs, NAS etc.). No
+  **Access Controls** do tailnet, limite `tag:moonshine` às portas do
+  Sunshine do HOST (47989, 47984, 47998-48000, 48010). Exemplo:
+
+```json
+  {
+    "acls": [
+      { "action": "accept", "src": ["tag:moonshine"], "dst": ["autogroup:self:*"] }
+    ]
+  }
+```
+
+  (Ajuste `dst` para o HOST específico e as portas do Sunshine; mantenha o
+  resto da rede fora do alcance dos jogadores.)
+
+- A chave concede acesso à **rede**, não a "administração": no modo `game` o
+  isolamento de sessão segue valendo; no modo `full` o jogador vê o desktop
+  do dono — o mesmo contrato de confiança do convite `full` de sempre.
+
 ## Credenciais do Sunshine
 
 O HOST pode guardar, **em memória de processo**, as credenciais da Web UI do
