@@ -214,6 +214,46 @@ test('modo online embutido: chave da rede vai só para prepare autenticado', asy
   await j('/api/session/end', { method: 'POST', token: pt2, body: { sessionId: sid2 } });
 });
 
+test('convite online: código MS1- carrega endereço + chave e resgata sozinho', async () => {
+  process.env.MOONSHINE_TAILSCALE_IP = '100.64.0.9';
+  const t = await login('admin', 'senha-admin-123');
+  // Chave da rede configurada + IP fixo (seam de teste/sobrescrita do dono).
+  let r = await j('/api/admin/network', {
+    method: 'POST',
+    token: t,
+    body: { tailscaleAuthKey: 'tskey-auth-online2' },
+  });
+  assert.equal(r.data.view.online.configured, true);
+
+  // Criar convite devolve o código online (self-suficiente para o app).
+  r = await j('/api/admin/invites', { method: 'POST', token: t, body: { mode: 'full' } });
+  assert.equal(r.status, 201);
+  const on = r.data.onlineCode;
+  assert.ok(on && on.startsWith('MS1-'), `onlineCode: ${on}`);
+
+  // A lista também expõe o código online do convite ativo.
+  r = await j('/api/admin/invites', { token: t });
+  const row = r.data.invites.find((i) => i.onlineCode === on);
+  assert.ok(row, 'convite na lista deve carregar o onlineCode');
+
+  // Resgate pelo código online (o app decodifica localmente o endereço/chave;
+  // o HOST só precisa do token embutido).
+  r = await j('/api/redeem', { method: 'POST', body: { code: on } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.mode, 'full');
+  assert.equal(r.data.online?.authKey, 'tskey-auth-online2');
+
+  // Sem chave configurada, volta ao código clássico (sem onlineCode).
+  await j('/api/admin/network', { method: 'POST', token: t, body: { tailscaleAuthKey: '' } });
+  r = await j('/api/admin/invites', { method: 'POST', token: t, body: { mode: 'game' } });
+  assert.equal(r.data.onlineCode, null);
+  // Resgate clássico continua funcionando.
+  r = await j('/api/redeem', { method: 'POST', body: { code: r.data.code } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.online, null);
+  delete process.env.MOONSHINE_TAILSCALE_IP;
+});
+
 test('convite: criar → resgatar → modo full na sessão (PC completo)', async () => {
   const t = await login('admin', 'senha-admin-123');
   // Cria convite modo full, 1 uso.

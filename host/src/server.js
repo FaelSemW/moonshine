@@ -20,6 +20,7 @@ import * as session from './session.js';
 import * as sunshine from './sunshine.js';
 import { compatibilityReport, detectTailscale } from './probe.js';
 import { loadConfig, saveConfig } from './config.js';
+import { decodeOnlineCode, encodeOnlineCode } from './onlinecode.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(here, '..', 'public');
@@ -137,6 +138,31 @@ function generateInviteCode() {
   return `${out.slice(0, 5)}-${out.slice(5)}`;
 }
 
+// Emissor do código "online" de convites: versão estendida (MS1-...) que
+// carrega endereço do HOST na rede privada + chave de autenticação, para o
+// APP do jogador entrar na rede sozinho (VPN embutida) ANTES de falar com o
+// HOST — sem isso seria pega-eto: a chave vem do HOST, que só é alcançável
+// depois de entrar na rede. Retorna null quando o modo online não está
+// configurado; caso contrário, uma função que emite o código por convite
+// (o IP da rede é resolvido UMA vez, não por convite).
+function onlineCodeIssuer() {
+  const cfg = loadConfig();
+  if (!cfg.tailscaleAuthKey) return null;
+  const ts = detectTailscale();
+  // Sobrescrita manual do IP: quando o CLI do Tailscale não está no PATH do
+  // serviço (ex.: instalação Flatpak só acessível pela GUI), o dono pode fixar
+  // o IP da rede por MOONSHINE_TAILSCALE_IP.
+  const ip = process.env.MOONSHINE_TAILSCALE_IP || (ts.running ? ts.ip : null);
+  if (!ip || !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return null;
+  return (classicCode) =>
+    encodeOnlineCode({
+      classicCode,
+      hostIpv4: ip,
+      authKey: cfg.tailscaleAuthKey,
+      controlUrl: cfg.tailscaleControlUrl || '',
+    });
+}
+
 // Valida campos de usuário contra injeção/valores maliciosos.
 function validateUserFields({ username, password, role }) {
   if (typeof username !== 'string' || !/^[a-zA-Z0-9._-]{3,32}$/.test(username)) {
@@ -199,6 +225,9 @@ async function handleApi(req, res, url) {
 
   // Resgate de código de convite: o código É a credencial do jogador (enviada
   // por ele pelo operador). Concede um token carregando o MODO do convite.
+  // Aceita o código clássico (XXXXX-XXXXX) e o código online (MS1-..., que
+  // também transporta endereço + chave da rede privada para o app embutir a
+  // VPN antes de falar com o HOST).
   if (method === 'POST' && path === '/api/redeem') {
     const body = await readJsonBody(req);
     const { code } = body;
@@ -208,7 +237,9 @@ async function handleApi(req, res, url) {
     if (rateLimit(`redeem:${clientIp(req)}`, 20, 60_000)) {
       throw new HttpError(429, 'muitas tentativas. Aguarde um minuto.');
     }
-    const invite = db.findInviteByCode(code.trim());
+    const raw = code.trim();
+    const onlinePayload = decodeOnlineCode(raw);
+    const invite = db.findInviteByCode(onlinePayload ? onlinePayload.token : raw);
     if (!invite) {
       db.logEvent('warn', 'redeem de código inexistente', { ip: clientIp(req) });
       throw new HttpError(401, 'código inválido');
@@ -229,12 +260,22 @@ async function handleApi(req, res, url) {
       inviteId: invite.id,
       userId: user.id,
       mode,
+      online: !!onlinePayload,
       ip: clientIp(req),
     });
     return sendJson(res, 200, {
       token,
       user: { id: user.id, username: user.username, role: user.role },
       mode,
+      // Convite online: entrega também a credencial da rede privada — o APP
+      // usa para entrar na rede (VPN embutida) e alcançar o HOST. Vazio no
+      // código clássico. Prioriza a chave ATUAL do config (rotação).
+      online: onlinePayload
+        ? {
+            authKey: loadConfig().tailscaleAuthKey || onlinePayload.authKey,
+            controlUrl: loadConfig().tailscaleControlUrl || onlinePayload.controlUrl || null,
+          }
+        : null,
     });
   }
 
@@ -429,7 +470,12 @@ async function handleAdmin(req, res, url, sub) {
   // ---- Códigos de convite (o jogador entra pelo código, não por senha) ----
   if (sub === 'invites' && method === 'GET') {
     requireAdmin(req);
-    return sendJson(res, 200, { invites: db.listInvites() });
+    const issue = onlineCodeIssuer();
+    const invites = db.listInvites().map((i) => ({
+      ...i,
+      onlineCode: i.active && issue ? issue(i.code) : null,
+    }));
+    return sendJson(res, 200, { invites });
   }
   if (sub === 'invites' && method === 'POST') {
     const a = requireAdmin(req);
@@ -462,8 +508,10 @@ async function handleAdmin(req, res, url, sub) {
 
     const code = generateInviteCode();
     const id = db.createInvite({ code, mode, userId, note, expiresAt, maxUses, createdBy: a.user.id });
-    db.logEvent('info', 'convite criado', { inviteId: id, mode, userId, maxUses, expiresAt });
-    return sendJson(res, 201, { ok: true, inviteId: id, code, mode, username, expiresAt, maxUses });
+    const issue = onlineCodeIssuer();
+    const onlineCode = issue ? issue(code) : null;
+    db.logEvent('info', 'convite criado', { inviteId: id, mode, userId, maxUses, expiresAt, online: !!onlineCode });
+    return sendJson(res, 201, { ok: true, inviteId: id, code, onlineCode, mode, username, expiresAt, maxUses });
   }
   if (sub === 'invites/revoke' && method === 'POST') {
     requireAdmin(req);

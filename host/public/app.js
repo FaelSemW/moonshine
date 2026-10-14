@@ -625,14 +625,20 @@ async function renderAdminInvites(body) {
                 ? '<span class="chip off">esgotado</span>'
                 : '<span class="chip on">ativo</span>';
           return `<tr>
-            <td><code>${i.code}</code></td>
+            <td>${i.onlineCode
+              ? `<code style="font-size:11px;word-break:break-all">${i.onlineCode}</code>
+                 <div class="sub" style="margin-top:4px">clássico: <code style="font-size:11px">${i.code}</code></div>`
+              : `<code>${i.code}</code>`}</td>
             <td>${i.mode === 'full' ? 'PC completo' : 'game'}</td>
             <td>${i.username || '—'}</td>
             <td>${i.uses}/${i.max_uses}</td>
             <td>${fmtDate(i.expires_at)}</td>
             <td>${status}</td>
             <td style="text-align:right;white-space:nowrap">
-              <button class="btn ghost" data-copy="${i.code}">Copiar</button>
+              ${i.onlineCode
+                ? `<button class="btn ghost" data-copy="${i.onlineCode}">Copiar (app)</button>
+                   <button class="btn ghost" data-copy="${i.code}">Copiar (clássico)</button>`
+                : `<button class="btn ghost" data-copy="${i.code}">Copiar</button>`}
               <button class="btn ghost" data-revoke="${i.id}" ${i.active ? '' : 'disabled'}>Revogar</button>
             </td>
           </tr>`;
@@ -663,14 +669,19 @@ async function renderAdminInvites(body) {
       if (mins) payload.expiresInMin = Number(mins);
       const c = await call('/api/admin/invites', { method: 'POST', body: payload });
       await renderAdminInvites(body); // atualiza a lista (já inclui o novo)
+      const enviado = c.onlineCode || c.code;
       el('newCode').innerHTML = `
         <div class="card" style="border-color:var(--accent);margin-top:14px">
-          <p class="sub">Código gerado — <strong>envie ao jogador</strong>:</p>
-          <p style="font-family:monospace;font-size:22px;letter-spacing:2px;margin:8px 0"><code>${c.code}</code></p>
+          <p class="sub">Código gerado — <strong>envie ao jogador</strong>${c.onlineCode ? ' (código online: o app dele entra na rede privada sozinho, sem instalar nada)' : ''}:</p>
+          <p style="font-family:monospace;font-size:${c.onlineCode ? '13px' : '22px'};letter-spacing:${c.onlineCode ? '0' : '2px'};margin:8px 0;word-break:break-all"><code>${enviado}</code></p>
           <p class="sub">Modo: <strong>${c.mode === 'full' ? 'PC completo' : 'game'}</strong> · Jogador: ${c.username} · Usos: ${c.maxUses}${c.expiresAt ? ` · expira ${fmtDate(c.expiresAt)}` : ''}</p>
-          <button class="btn" id="copyNew">Copiar código</button>
+          <div class="row">
+            <button class="btn" id="copyNew">Copiar código</button>
+            ${c.onlineCode ? '<button class="btn secondary" id="copyNewClassic">Copiar código clássico</button>' : ''}
+          </div>
         </div>`;
-      el('copyNew').onclick = () => copyText(c.code);
+      el('copyNew').onclick = () => copyText(enviado);
+      if (c.onlineCode) el('copyNewClassic').onclick = () => copyText(c.code);
       toast('Convite criado.', 'ok');
     } catch (err) { toast(err.message, 'error'); }
   };
